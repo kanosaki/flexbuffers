@@ -1,0 +1,9 @@
+[submodule "samplegen/third_party/flatbuffers"]
+	path = samplegen/third_party/flatbuffers
+	url = https://github.com/google/flatbuffers.git
+[submodule "samplegen/third_party/repidjson"]
+	path = samplegen/third_party/repidjson
+	url = https://github.com/Tencent/rapidjson
+[submodule "samplegen/third_party/rapidjson"]
+	path = samplegen/third_party/rapidjson
+	url = https://github.com/Tencent/rapidjson
