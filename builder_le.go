@@ -21,7 +21,7 @@ const (
 type stringOffset [2]string
 
 type Builder struct {
-	buf              *Buffer
+	buf              []byte
 	stack            []value
 	finished         bool
 	flags            BuilderFlag
@@ -41,15 +41,15 @@ func (b *Builder) Buffer() Raw {
 	if !b.finished {
 		panic("assertion error")
 	}
-	return b.buf.Bytes()
+	return b.buf
 }
 
 func (b *Builder) Size() int {
-	return b.buf.Len()
+	return len(b.buf)
 }
 
 func (b *Builder) Clear() {
-	b.buf = NewBuffer(nil)
+	b.buf = make([]byte, 0, 64)
 	b.stack = nil
 	b.finished = false
 	b.forceMinBitWidth = BitWidth8
@@ -61,7 +61,7 @@ func (b *Builder) Finish() error {
 	if len(b.stack) == 0 {
 		return fmt.Errorf("empty document")
 	}
-	byteWidth := b.align(b.stack[0].ElemWidth(b.buf.Len(), 0))
+	byteWidth := b.align(b.stack[0].ElemWidth(len(b.buf), 0))
 	b.WriteAny(&b.stack[0], byteWidth)
 	b.WriteUInt(uint64(b.stack[0].StoredPackedType(BitWidth8)), 1)
 	b.WriteUInt(uint64(byteWidth), 1)
@@ -70,13 +70,13 @@ func (b *Builder) Finish() error {
 }
 
 func (b *Builder) WriteBytes(data []byte) {
-	b.buf.Write(data)
+	b.buf = append(b.buf, data...)
 }
 
 func (b *Builder) Key(key []byte) uint64 {
-	sloc := uint64(b.buf.Len())
+	sloc := uint64(len(b.buf))
 	b.WriteBytes(key)
-	b.buf.WriteByte(0) // write null terminator
+	b.buf = append(b.buf, 0) // terminate bytes
 	if b.flags&BuilderFlagShareStrings > 0 {
 		// TODO
 	}
@@ -140,8 +140,8 @@ func (b *Builder) BoolField(key []byte, v bool) {
 
 func (b *Builder) align(alignment BitWidth) int {
 	byteWidth := 1 << alignment
-	for i := 0; i < PaddingBytes(b.buf.Len(), byteWidth); i++ {
-		b.buf.WriteByte(0)
+	for i := 0; i < PaddingBytes(len(b.buf), byteWidth); i++ {
+		b.buf = append(b.buf, 0)
 	}
 	return byteWidth
 }
@@ -150,7 +150,7 @@ func (b *Builder) IndirectInt(i int64) {
 	var tmp [8]byte
 	bitWidth := WidthI(i)
 	byteWidth := b.align(bitWidth)
-	iloc := uint64(b.buf.Len())
+	iloc := uint64(len(b.buf))
 	*((*int64)(unsafe.Pointer(&tmp[0]))) = i
 	b.WriteBytes(tmp[:byteWidth])
 	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectInt, bitWidth))
@@ -165,7 +165,7 @@ func (b *Builder) IndirectUInt(i uint64) {
 	var tmp [8]byte
 	bitWidth := WidthU(i)
 	byteWidth := b.align(bitWidth)
-	iloc := uint64(b.buf.Len())
+	iloc := uint64(len(b.buf))
 	*((*uint64)(unsafe.Pointer(&tmp[0]))) = i
 	b.WriteBytes(tmp[:byteWidth])
 	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectUInt, bitWidth))
@@ -180,7 +180,7 @@ func (b *Builder) IndirectFloat32(f float32) {
 	var tmp [4]byte
 	bitWidth := BitWidth32
 	byteWidth := b.align(bitWidth)
-	iloc := uint64(b.buf.Len())
+	iloc := uint64(len(b.buf))
 	*((*float32)(unsafe.Pointer(&tmp[0]))) = f
 	b.WriteBytes(tmp[:byteWidth])
 	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
@@ -195,7 +195,7 @@ func (b *Builder) IndirectFloat64(f float64) {
 	var tmp [8]byte
 	bitWidth := WidthF(f)
 	byteWidth := b.align(bitWidth)
-	iloc := uint64(b.buf.Len())
+	iloc := uint64(len(b.buf))
 	*((*float64)(unsafe.Pointer(&tmp[0]))) = f
 	b.WriteBytes(tmp[:byteWidth])
 	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
@@ -206,8 +206,18 @@ func (b *Builder) IndirectFloat64Field(key []byte, f float64) {
 	b.IndirectFloat64(f)
 }
 
+func (b *Builder) allocateUnsafe(bw int) unsafe.Pointer {
+	l := len(b.buf)
+	if bw <= cap(b.buf)-l {
+		b.buf = b.buf[:l+bw]
+	} else {
+		b.buf = append(b.buf, make([]byte, bw)...)
+	}
+	return unsafe.Pointer(&b.buf[l])
+}
+
 func (b *Builder) WriteUInt(i uint64, bw int) {
-	ptr := b.buf.AllocateUnsafe(bw)
+	ptr := b.allocateUnsafe(bw)
 	if bw == 1 {
 		*(*uint8)(ptr) = uint8(i)
 	} else if bw == 2 {
@@ -220,7 +230,7 @@ func (b *Builder) WriteUInt(i uint64, bw int) {
 }
 
 func (b *Builder) WriteInt(i int64, bw int) {
-	ptr := b.buf.AllocateUnsafe(bw)
+	ptr := b.allocateUnsafe(bw)
 	if bw == 1 {
 		*(*int8)(ptr) = int8(i)
 	} else if bw == 2 {
@@ -232,7 +242,7 @@ func (b *Builder) WriteInt(i int64, bw int) {
 	}
 }
 func (b *Builder) WriteDouble(f float64, byteWidth int) {
-	ptr := b.buf.AllocateUnsafe(byteWidth)
+	ptr := b.allocateUnsafe(byteWidth)
 	if byteWidth == 4 {
 		*(*float64)(ptr) = f
 	} else if byteWidth == 8 {
@@ -334,7 +344,7 @@ func (b *Builder) EndMap(start int) int {
 }
 
 func (b *Builder) WriteOffset(o int, byteWidth int) {
-	reloff := b.buf.Len() - o
+	reloff := len(b.buf) - o
 	if byteWidth != 8 && reloff >= 1<<(byteWidth*8) {
 		panic("assertion failed")
 	}
@@ -345,11 +355,10 @@ func (b *Builder) createBlob(data []byte, trailing int, t Type) int {
 	bitWidth := WidthU(uint64(len(data)))
 	byteWidth := b.align(bitWidth)
 	b.WriteUInt(uint64(len(data)), byteWidth)
-	sloc := b.buf.Len()
-	b.buf.Grow(len(data) + trailing)
+	sloc := len(b.buf)
 	b.WriteBytes(data)
 	for i := 0; i < trailing; i++ {
-		b.buf.WriteByte(0)
+		b.buf = append(b.buf, 0)
 	}
 	b.stack = append(b.stack, newValueUInt(uint64(sloc), t, bitWidth))
 	return sloc
@@ -372,12 +381,12 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 	bitWidth := BitWidthMax(b.forceMinBitWidth, WidthU(uint64(vecLen)))
 	prefixElems := 1
 	if keys != nil {
-		bitWidth = BitWidthMax(bitWidth, keys.ElemWidth(b.buf.Len(), 0))
+		bitWidth = BitWidthMax(bitWidth, keys.ElemWidth(len(b.buf), 0))
 		prefixElems += 2
 	}
 	vectorType := FBTKey
 	for i := start; i < len(b.stack); i += step {
-		elemWidth := b.stack[i].ElemWidth(b.buf.Len(), i+prefixElems)
+		elemWidth := b.stack[i].ElemWidth(len(b.buf), i+prefixElems)
 		bitWidth = BitWidthMax(bitWidth, elemWidth)
 		if typed {
 			if i == start {
@@ -398,13 +407,14 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 	if !fixed {
 		b.WriteUInt(uint64(vecLen), byteWidth)
 	}
-	vloc := b.buf.Len()
+	vloc := len(b.buf)
 	for i := start; i < len(b.stack); i += step {
 		b.WriteAny(&b.stack[i], byteWidth)
 	}
 	if !typed {
 		for i := start; i < len(b.stack); i += step {
-			b.buf.WriteByte(b.stack[i].StoredPackedType(bitWidth))
+			// TODO: optimize by preallocate
+			b.buf = append(b.buf, b.stack[i].StoredPackedType(bitWidth))
 		}
 	}
 	t := FBTVector
@@ -453,7 +463,7 @@ func (b *Builder) scalarVector(elems []interface{}, fixed bool) int {
 	if !fixed {
 		b.WriteUInt(uint64(l), byteWidth)
 	}
-	vloc := b.buf.Len()
+	vloc := len(b.buf)
 	for i := 0; i < l; i++ {
 		b.Write(elems[i], byteWidth)
 	}
