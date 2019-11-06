@@ -10,15 +10,13 @@ import (
 type BuilderFlag int
 
 const (
-	BuilderFlagNone BuilderFlag = iota
-	BuilderFlagShareKeys
-	BuilderFlagShareStrings
-	BuilderFlagShareKeysAndStrings
-	BuilderFlagShareKeyVectors
-	BuilderFlagShareAll
+	BuilderFlagNone                BuilderFlag = 0
+	BuilderFlagShareKeys           BuilderFlag = 1
+	BuilderFlagShareStrings        BuilderFlag = 2
+	BuilderFlagShareKeysAndStrings BuilderFlag = 3
+	BuilderFlagShareKeyVectors     BuilderFlag = 4
+	BuilderFlagShareAll            BuilderFlag = 7
 )
-
-type stringOffset [2]string
 
 type Builder struct {
 	buf              []byte
@@ -27,8 +25,9 @@ type Builder struct {
 	flags            BuilderFlag
 	forceMinBitWidth BitWidth
 
-	keyOffsetMap    map[int]struct{}
-	stringOffsetMap map[stringOffset]struct{}
+	keyOffsetMap        map[int64]uint64
+	stringOffsetMap     map[int64]uint64
+	keyVectorsOffsetMap map[int64]uint64
 }
 
 func NewBuilder() *Builder {
@@ -53,8 +52,21 @@ func (b *Builder) Clear() {
 	b.stack = nil
 	b.finished = false
 	b.forceMinBitWidth = BitWidth8
-	b.keyOffsetMap = make(map[int]struct{})
-	b.stringOffsetMap = make(map[stringOffset]struct{})
+	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
+		b.keyOffsetMap = make(map[int64]uint64)
+	} else {
+		b.keyOffsetMap = nil
+	}
+	if b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings {
+		b.stringOffsetMap = make(map[int64]uint64)
+	} else {
+		b.stringOffsetMap = nil
+	}
+	if b.flags&BuilderFlagShareKeyVectors == BuilderFlagShareKeyVectors {
+		b.keyVectorsOffsetMap = make(map[int64]uint64)
+	} else {
+		b.keyVectorsOffsetMap = nil
+	}
 }
 
 func (b *Builder) Finish() error {
@@ -256,6 +268,7 @@ func (b *Builder) StringValue(s string) int {
 	//resetTo := b.buf.Len()
 	sloc := b.createBlob(stringToBytes(s), 1, FBTString)
 	if b.flags&BuilderFlagShareStrings > 0 {
+		if b.stringOffsetMap
 		// TODO
 	}
 	return sloc
