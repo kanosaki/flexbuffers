@@ -4,10 +4,15 @@ import "C"
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"unsafe"
+)
+
+var (
+	ErrTypeDoesNotMatch = errors.New("type doesn't match")
 )
 
 var NullReference = Reference{
@@ -65,12 +70,20 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 	case FBTFloat, FBTIndirectFloat:
 		_, err = fmt.Fprintf(w, "%f", r.AsFloat64())
 	case FBTKey:
-		_, err = fmt.Fprintf(w, "\"%s\"", r.asStringKey())
+		k, err := r.asStringKey()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "\"%s\"", k)
 	case FBTString:
-		_, err = fmt.Fprintf(w, "\"%s\"", r.AsString().StringValue())
+		_, err = fmt.Fprintf(w, "\"%s\"", r.AsStringRef().StringValue())
 	case FBTMap:
 		m := r.AsMap()
-		keys := m.Keys()
+		var keys TypedVector
+		keys, err = m.Keys()
+		if err != nil {
+			return
+		}
 		values := m.Values()
 		for i := 0; i < keys.Size(); i++ {
 			k := keys.At(i)
@@ -190,117 +203,254 @@ func (r Reference) IsMap() bool {
 func (r Reference) IsBlob() bool {
 	return r.type_ == FBTBlob
 }
-
 func (r Reference) AsBool() bool {
+	v, _ := r.Bool()
+	return v
+}
+
+func (r Reference) Bool() (bool, error) {
 	if r.type_ == FBTBool {
-		return r.data_.ReadUInt64(r.offset, r.parentWidth) != 0
+		v, err := r.data_.ReadUInt64(r.offset, r.parentWidth)
+		if err != nil {
+			return false, err
+		}
+		return v != 0, nil
 	} else {
-		return r.AsUInt64() != 0
+		v, err := r.UInt64()
+		if err != nil {
+			return false, err
+		}
+		return v != 0, nil
 	}
 }
 
-func (r Reference) indirect() int {
+func (r Reference) indirect() (int, error) {
 	return r.data_.Indirect(r.offset, r.parentWidth)
 }
 
-func (r Reference) AsInt64() int64 {
+func (r Reference) Int64() (int64, error) {
 	if r.type_ == FBTInt {
 		return r.data_.ReadInt64(r.offset, r.parentWidth)
 	} else {
 		switch r.type_ {
 		case FBTIndirectInt:
-			return r.data_.ReadInt64(r.indirect(), r.byteWidth)
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			return r.data_.ReadInt64(ind, r.byteWidth)
 		case FBTUint:
-			return int64(r.data_.ReadUInt64(r.offset, r.parentWidth))
+			v, err := r.data_.ReadUInt64(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return int64(v), nil
 		case FBTIndirectUInt:
-			return int64(r.data_.ReadUInt64(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadUInt64(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return int64(v), nil
 		case FBTFloat:
-			return int64(r.data_.ReadDouble(r.offset, r.parentWidth))
+			v, err := r.data_.ReadDouble(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return int64(v), nil
 		case FBTIndirectFloat:
-			return int64(r.data_.ReadDouble(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadDouble(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return int64(v), nil
 		case FBTNull:
-			return 0
+			return 0, nil
 		case FBTString:
-			s := cstringBytesToString(r.data_[r.indirect():])
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			s := cstringBytesToString(r.data_[ind:])
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
 				panic("TODO")
 			}
-			return i
+			return i, nil
 		case FBTVector:
-			return int64(r.AsVector().Size())
+			return int64(r.AsVector().Size()), nil
 		case FBTBool:
 			return r.data_.ReadInt64(r.offset, r.parentWidth)
 		default:
-			return 0
+			return 0, ErrTypeDoesNotMatch
 		}
 	}
 }
 
+func (r Reference) AsInt64() int64 {
+	v, _ := r.Int64()
+	return v
+}
 func (r Reference) AsUInt64() uint64 {
+	v, _ := r.UInt64()
+	return v
+}
+
+func (r Reference) UInt64() (uint64, error) {
 	if r.type_ == FBTUint {
 		return r.data_.ReadUInt64(r.offset, r.parentWidth)
 	} else {
 		switch r.type_ {
 		case FBTIndirectUInt:
-			return uint64(r.data_.ReadUInt64(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadUInt64(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return v, nil
 		case FBTInt:
-			return uint64(r.data_.ReadInt64(r.offset, r.parentWidth))
+			v, err := r.data_.ReadInt64(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return uint64(v), nil
 		case FBTIndirectInt:
-			return uint64(r.data_.ReadInt64(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadInt64(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return uint64(v), nil
 		case FBTFloat:
-			return uint64(r.data_.ReadDouble(r.offset, r.parentWidth))
+			v, err := r.data_.ReadDouble(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return uint64(v), nil
 		case FBTIndirectFloat:
-			return uint64(r.data_.ReadDouble(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadDouble(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return uint64(v), nil
 		case FBTNull:
-			return 0
+			return 0, nil
 		case FBTString:
-			s := cstringBytesToString(r.data_[r.indirect():])
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			s := cstringBytesToString(r.data_[ind:])
 			i, err := strconv.ParseUint(s, 10, 64)
 			if err != nil {
-				panic("TODO")
+				return 0, err
 			}
-			return i
+			return i, nil
 		case FBTVector:
-			return uint64(r.AsVector().Size())
+			v, err := r.Vector()
+			if err != nil {
+				return 0, err
+			}
+			return uint64(v.Size()), nil
 		case FBTBool:
 			return r.data_.ReadUInt64(r.offset, r.parentWidth)
 		default:
-			return 0
+			return 0, ErrTypeDoesNotMatch
 		}
 	}
 }
-
 func (r Reference) AsFloat64() float64 {
+	v, _ := r.Float64()
+	return v
+}
+
+func (r Reference) Float64() (float64, error) {
 	if r.type_ == FBTFloat {
 		return r.data_.ReadDouble(r.offset, r.parentWidth)
 	} else {
 		switch r.type_ {
 		case FBTIndirectFloat:
-			return r.data_.ReadDouble(r.indirect(), r.byteWidth)
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			return r.data_.ReadDouble(ind, r.byteWidth)
 		case FBTUint:
-			return float64(r.data_.ReadUInt64(r.offset, r.parentWidth))
+			v, err := r.data_.ReadUInt64(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return float64(v), nil
 		case FBTIndirectUInt:
-			return float64(r.data_.ReadUInt64(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadUInt64(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return float64(v), nil
 		case FBTInt:
-			return float64(r.data_.ReadInt64(r.offset, r.parentWidth))
+			v, err := r.data_.ReadInt64(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return float64(v), nil
 		case FBTIndirectInt:
-			return float64(r.data_.ReadInt64(r.indirect(), r.byteWidth))
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			v, err := r.data_.ReadInt64(ind, r.byteWidth)
+			if err != nil {
+				return 0, err
+			}
+			return float64(v), nil
 		case FBTNull:
-			return 0
+			return 0, nil
 		case FBTString:
-			s := cstringBytesToString(r.data_[r.indirect():])
+			ind, err := r.indirect()
+			if err != nil {
+				return 0, err
+			}
+			s := cstringBytesToString(r.data_[ind:])
 			i, err := strconv.ParseFloat(s, 64)
 			if err != nil {
-				panic("TODO")
+				return 0, err
 			}
-			return i
+			return i, nil
 		case FBTVector:
-			return float64(r.AsVector().Size())
+			v, err := r.Vector()
+			if err != nil {
+				return 0, err
+			}
+			return float64(v.Size()), nil
 		case FBTBool:
-			return float64(r.data_.ReadUInt64(r.offset, r.parentWidth))
+			v, err := r.data_.ReadUInt64(r.offset, r.parentWidth)
+			if err != nil {
+				return 0, err
+			}
+			return float64(v), nil
 		default:
-			return 0
+			return 0, ErrTypeDoesNotMatch
 		}
 	}
 }
@@ -309,33 +459,72 @@ func (r Reference) AsFloat32() float32 {
 	return float32(r.AsFloat64())
 }
 
-func (r Reference) asStringKey() string {
+func (r Reference) asStringKey() (string, error) {
 	if r.type_ == FBTKey {
-		ind := r.indirect()
-		return unsafeReadCString(r.data_, ind)
-	} else {
-		return ""
-	}
-}
-
-func (r Reference) AsKey() Key {
-	if r.type_ == FBTKey {
-		ind := r.indirect()
-		return Key{
-			Object{
-				buf:    r.data_,
-				offset: ind,
-			},
+		ind, err := r.indirect()
+		if err != nil {
+			return "", err
 		}
+		return unsafeReadCString(r.data_, ind), nil
 	} else {
-		return EmptyKey()
+		return "", nil
 	}
 }
+func (r Reference) AsKey() Key {
+	v, _ := r.Key()
+	return v
+}
 
-func (r Reference) AsString() String {
-	if r.type_ == FBTString {
-		ind := r.indirect()
-		return String{
+func (r Reference) Key() (Key, error) {
+	if r.type_ != FBTKey {
+		return EmptyKey(), ErrTypeDoesNotMatch
+	}
+	ind, err := r.indirect()
+	if err != nil {
+		return Key{}, err
+	}
+	return Key{
+		Object{
+			buf:    r.data_,
+			offset: ind,
+		},
+	}, nil
+}
+func (r Reference) AsStringRef() String {
+	v, _ := r.StringRef()
+	return v
+}
+
+func (r Reference) StringRef() (String, error) {
+	if r.type_ != FBTString {
+		return EmptyString(), ErrTypeDoesNotMatch
+	}
+	ind, err := r.indirect()
+	if err != nil {
+		return String{}, err
+	}
+	return String{
+		Sized{
+			Object{
+				buf:       r.data_,
+				offset:    ind,
+				byteWidth: r.byteWidth,
+			},
+		},
+	}, nil
+}
+func (r Reference) AsBlob() Blob {
+	v, _ := r.Blob()
+	return v
+}
+
+func (r Reference) Blob() (Blob, error) {
+	ind, err := r.indirect()
+	if err != nil {
+		return Blob{}, err
+	}
+	if r.type_ == FBTBlob || r.type_ == FBTString {
+		return Blob{
 			Sized{
 				Object{
 					buf:       r.data_,
@@ -343,140 +532,186 @@ func (r Reference) AsString() String {
 					byteWidth: r.byteWidth,
 				},
 			},
-		}
+		}, nil
 	} else {
-		return EmptyString()
+		return EmptyBlob(), nil
 	}
 }
-
-func (r Reference) AsBlob() Blob {
-	if r.type_ == FBTBlob || r.type_ == FBTString {
-		return Blob{
-			Sized{
-				Object{
-					buf:       r.data_,
-					offset:    r.indirect(),
-					byteWidth: r.byteWidth,
-				},
-			},
-		}
-	} else {
-		return EmptyBlob()
-	}
-}
-
 func (r Reference) AsVector() Vector {
+	v, _ := r.Vector()
+	return v
+}
+
+func (r Reference) Vector() (Vector, error) {
+	ind, err := r.indirect()
+	if err != nil {
+		return Vector{}, err
+	}
 	if r.type_ == FBTVector || r.type_ == FBTMap {
 		return Vector{
 			Sized{
 				Object{
 					buf:       r.data_,
-					offset:    r.indirect(),
+					offset:    ind,
 					byteWidth: r.byteWidth,
 				},
 			},
-		}
+		}, nil
 	} else {
-		return EmptyVector()
+		return EmptyVector(), nil
 	}
 }
-
 func (r Reference) AsTypedVector() TypedVector {
+	v, _ := r.TypedVector()
+	return v
+}
+
+func (r Reference) TypedVector() (TypedVector, error) {
+	ind, err := r.indirect()
+	if err != nil {
+		return TypedVector{}, err
+	}
 	if r.IsTypedVector() {
 		return TypedVector{
 			Sized: Sized{
 				Object{
 					buf:       r.data_,
-					offset:    r.indirect(),
+					offset:    ind,
 					byteWidth: r.byteWidth,
 				},
 			},
 			type_: ToTypedVectorElementType(r.type_),
-		}
+		}, nil
 	} else {
-		return EmptyTypedVector()
+		return EmptyTypedVector(), nil
 	}
 }
-
 func (r Reference) AsFixedTypedVector() FixedTypedVector {
-	if r.IsFixedTypedVector() {
-		var l uint8
-		vtype := ToFixedTypedVectorElementType(r.type_, &l)
-		return FixedTypedVector{
-			Object: Object{
-				buf:       r.data_,
-				offset:    r.indirect(),
-				byteWidth: r.byteWidth,
-			},
-			type_: vtype,
-			len_:  l,
-		}
-	} else {
+	v, err := r.FixedTypedVector()
+	if err == ErrTypeDoesNotMatch {
 		return EmptyFixedTypedVector()
 	}
+	return v
+}
+
+func (r Reference) FixedTypedVector() (FixedTypedVector, error) {
+	if !r.IsFixedTypedVector() {
+		return FixedTypedVector{}, ErrTypeDoesNotMatch
+	}
+	ind, err := r.indirect()
+	if err != nil {
+		return FixedTypedVector{}, err
+	}
+	var l uint8
+	vtype := ToFixedTypedVectorElementType(r.type_, &l)
+	return FixedTypedVector{
+		Object: Object{
+			buf:       r.data_,
+			offset:    ind,
+			byteWidth: r.byteWidth,
+		},
+		type_: vtype,
+		len_:  l,
+	}, nil
 }
 
 func (r Reference) AsMap() Map {
-	if r.type_ == FBTMap {
-		return Map{Vector{Sized{Object{
-			buf:       r.data_,
-			offset:    r.indirect(),
-			byteWidth: r.byteWidth,
-		}}}}
-	} else {
+	v, err := r.Map()
+	if err == ErrTypeDoesNotMatch {
 		return EmptyMap()
 	}
+	return v
 }
 
-func (r Reference) MutateInt(i int64) bool {
-	if r.type_ == FBTInt {
+func (r Reference) Map() (Map, error) {
+	if r.type_ != FBTMap {
+		return Map{}, ErrTypeDoesNotMatch
+	}
+	ind, err := r.indirect()
+	if err != nil {
+		return Map{}, err
+	}
+	return Map{Vector{Sized{Object{
+		buf:       r.data_,
+		offset:    ind,
+		byteWidth: r.byteWidth,
+	}}}}, nil
+}
+
+func (r Reference) MutateInt(i int64) error {
+	switch r.type_ {
+	case FBTInt:
 		return r.data_.WriteInt64(r.offset, r.parentWidth, i)
-	} else if r.type_ == FBTIndirectInt {
-		return r.data_.WriteInt64(r.indirect(), r.byteWidth, i)
-	} else if r.type_ == FBTUint {
+	case FBTIndirectInt:
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
+		return r.data_.WriteInt64(ind, r.byteWidth, i)
+	case FBTUint:
 		u := uint64(i)
 		return r.data_.WriteUInt64(r.offset, r.parentWidth, u)
-	} else if r.type_ == FBTIndirectUInt {
+	case FBTIndirectUInt:
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
 		u := uint64(i)
-		return r.data_.WriteUInt64(r.indirect(), r.byteWidth, u)
-	} else {
-		return false
+		return r.data_.WriteUInt64(ind, r.byteWidth, u)
+	default:
+		return ErrTypeDoesNotMatch
 	}
 }
 
-func (r Reference) MutateUInt(u uint64) bool {
+func (r Reference) MutateUInt(u uint64) error {
 	if r.type_ == FBTUint {
 		return r.data_.WriteUInt64(r.offset, r.parentWidth, u)
 	} else if r.type_ == FBTIndirectUInt {
-		return r.data_.WriteUInt64(r.indirect(), r.byteWidth, u)
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
+		return r.data_.WriteUInt64(ind, r.byteWidth, u)
 	} else if r.type_ == FBTInt {
 		i := int64(u)
 		return r.data_.WriteInt64(r.offset, r.parentWidth, i)
 	} else if r.type_ == FBTIndirectInt {
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
 		i := int64(u)
-		return r.data_.WriteInt64(r.indirect(), r.byteWidth, i)
+		return r.data_.WriteInt64(ind, r.byteWidth, i)
 	} else {
-		return false
+		return ErrTypeDoesNotMatch
 	}
 }
 
-func (r Reference) MutateFloat64(f float64) bool {
+func (r Reference) MutateFloat64(f float64) error {
 	if r.type_ == FBTFloat {
 		return r.data_.WriteFloat(r.offset, r.parentWidth, f)
 	} else if r.type_ == FBTIndirectFloat {
-		return r.data_.WriteFloat(r.indirect(), r.byteWidth, f)
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
+		return r.data_.WriteFloat(ind, r.byteWidth, f)
 	} else {
-		return false
+		return ErrTypeDoesNotMatch
 	}
 }
 
-func (r Reference) MutateFloat32(f float32) bool {
+func (r Reference) MutateFloat32(f float32) error {
 	if r.type_ == FBTFloat {
 		return r.data_.WriteFloat(r.offset, r.parentWidth, float64(f))
 	} else if r.type_ == FBTIndirectFloat {
-		return r.data_.WriteFloat(r.indirect(), r.byteWidth, float64(f))
+		ind, err := r.indirect()
+		if err != nil {
+			return err
+		}
+		return r.data_.WriteFloat(ind, r.byteWidth, float64(f))
 	} else {
-		return false
+		return ErrTypeDoesNotMatch
 	}
 }
 
@@ -487,7 +722,7 @@ func (r Reference) MutateString(s string) bool {
 	// This is very strict, could allow shorter strings, but that creates
 	// garbage.
 	// ... flexbuffers.h says so
-	if len(s) != r.AsString().Size() {
+	if len(s) != r.AsStringRef().Size() {
 		return false
 	}
 	data := *(*[]byte)(unsafe.Pointer(&s))

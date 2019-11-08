@@ -1,10 +1,19 @@
-//+build amd64
-
 package flexbuffers
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
-	"unsafe"
+	"reflect"
+
+	"github.com/cespare/xxhash"
+)
+
+var (
+	ErrSizeOverflow      = errors.New("overflow")
+	ErrOddSizeMapContent = errors.New("map expecting even items, but got odd items")
+	ErrOffsetOutOfRange  = errors.New("offset out of range")
+	ErrNoNullByte        = errors.New("no null terminator found")
 )
 
 type BuilderFlag int
@@ -24,10 +33,11 @@ type Builder struct {
 	finished         bool
 	flags            BuilderFlag
 	forceMinBitWidth BitWidth
+	err              error
 
-	keyOffsetMap        map[int64]uint64
-	stringOffsetMap     map[int64]uint64
-	keyVectorsOffsetMap map[int64]uint64
+	keyOffsetMap        map[uint64]uint64
+	stringOffsetMap     map[uint64]uint64
+	keyVectorsOffsetMap map[uint64]uint64
 }
 
 func NewBuilder() *Builder {
@@ -53,28 +63,33 @@ func (b *Builder) Clear() {
 	b.finished = false
 	b.forceMinBitWidth = BitWidth8
 	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
-		b.keyOffsetMap = make(map[int64]uint64)
+		b.keyOffsetMap = make(map[uint64]uint64)
 	} else {
 		b.keyOffsetMap = nil
 	}
 	if b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings {
-		b.stringOffsetMap = make(map[int64]uint64)
+		b.stringOffsetMap = make(map[uint64]uint64)
 	} else {
 		b.stringOffsetMap = nil
 	}
 	if b.flags&BuilderFlagShareKeyVectors == BuilderFlagShareKeyVectors {
-		b.keyVectorsOffsetMap = make(map[int64]uint64)
+		b.keyVectorsOffsetMap = make(map[uint64]uint64)
 	} else {
 		b.keyVectorsOffsetMap = nil
 	}
 }
 
 func (b *Builder) Finish() error {
+	if b.err != nil {
+		return b.err
+	}
 	if len(b.stack) == 0 {
 		return fmt.Errorf("empty document")
 	}
 	byteWidth := b.align(b.stack[0].ElemWidth(len(b.buf), 0))
-	b.WriteAny(&b.stack[0], byteWidth)
+	if err := b.WriteAny(&b.stack[0], byteWidth); err != nil {
+		return err
+	}
 	b.WriteUInt(uint64(b.stack[0].StoredPackedType(BitWidth8)), 1)
 	b.WriteUInt(uint64(byteWidth), 1)
 	b.finished = true
@@ -87,11 +102,19 @@ func (b *Builder) WriteBytes(data []byte) {
 
 func (b *Builder) Key(key []byte) uint64 {
 	sloc := uint64(len(b.buf))
+	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
+		hash := xxhash.Sum64(key)
+		if prevSloc, ok := b.keyOffsetMap[hash]; ok {
+			prevKey := readCStringBytes(b.buf, int(prevSloc))
+			if bytes.Compare(key, prevKey) == 0 {
+				b.stack = append(b.stack, newValueUInt(prevSloc, FBTKey, BitWidth8))
+				return prevSloc
+			}
+		}
+		b.keyOffsetMap[hash] = sloc
+	}
 	b.WriteBytes(key)
 	b.buf = append(b.buf, 0) // terminate bytes
-	if b.flags&BuilderFlagShareStrings > 0 {
-		// TODO
-	}
 	b.stack = append(b.stack, newValueUInt(sloc, FBTKey, BitWidth8))
 	return sloc
 }
@@ -158,29 +181,9 @@ func (b *Builder) align(alignment BitWidth) int {
 	return byteWidth
 }
 
-func (b *Builder) IndirectInt(i int64) {
-	var tmp [8]byte
-	bitWidth := WidthI(i)
-	byteWidth := b.align(bitWidth)
-	iloc := uint64(len(b.buf))
-	*((*int64)(unsafe.Pointer(&tmp[0]))) = i
-	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectInt, bitWidth))
-}
-
 func (b *Builder) IndirectIntField(key []byte, i int64) {
 	b.Key(key)
 	b.IndirectInt(i)
-}
-
-func (b *Builder) IndirectUInt(i uint64) {
-	var tmp [8]byte
-	bitWidth := WidthU(i)
-	byteWidth := b.align(bitWidth)
-	iloc := uint64(len(b.buf))
-	*((*uint64)(unsafe.Pointer(&tmp[0]))) = i
-	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectUInt, bitWidth))
 }
 
 func (b *Builder) IndirectUIntField(key []byte, i uint64) {
@@ -188,29 +191,9 @@ func (b *Builder) IndirectUIntField(key []byte, i uint64) {
 	b.IndirectUInt(i)
 }
 
-func (b *Builder) IndirectFloat32(f float32) {
-	var tmp [4]byte
-	bitWidth := BitWidth32
-	byteWidth := b.align(bitWidth)
-	iloc := uint64(len(b.buf))
-	*((*float32)(unsafe.Pointer(&tmp[0]))) = f
-	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
-}
-
 func (b *Builder) IndirectFloat32Field(key []byte, f float32) {
 	b.Key(key)
 	b.IndirectFloat32(f)
-}
-
-func (b *Builder) IndirectFloat64(f float64) {
-	var tmp [8]byte
-	bitWidth := WidthF(f)
-	byteWidth := b.align(bitWidth)
-	iloc := uint64(len(b.buf))
-	*((*float64)(unsafe.Pointer(&tmp[0]))) = f
-	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
 }
 
 func (b *Builder) IndirectFloat64Field(key []byte, f float64) {
@@ -218,57 +201,10 @@ func (b *Builder) IndirectFloat64Field(key []byte, f float64) {
 	b.IndirectFloat64(f)
 }
 
-func (b *Builder) allocateUnsafe(bw int) unsafe.Pointer {
-	l := len(b.buf)
-	if bw <= cap(b.buf)-l {
-		b.buf = b.buf[:l+bw]
-	} else {
-		b.buf = append(b.buf, make([]byte, bw)...)
-	}
-	return unsafe.Pointer(&b.buf[l])
-}
-
-func (b *Builder) WriteUInt(i uint64, bw int) {
-	ptr := b.allocateUnsafe(bw)
-	if bw == 1 {
-		*(*uint8)(ptr) = uint8(i)
-	} else if bw == 2 {
-		*(*uint16)(ptr) = uint16(i)
-	} else if bw == 4 {
-		*(*uint32)(ptr) = uint32(i)
-	} else if bw == 8 {
-		*(*uint64)(ptr) = uint64(i)
-	}
-}
-
-func (b *Builder) WriteInt(i int64, bw int) {
-	ptr := b.allocateUnsafe(bw)
-	if bw == 1 {
-		*(*int8)(ptr) = int8(i)
-	} else if bw == 2 {
-		*(*int16)(ptr) = int16(i)
-	} else if bw == 4 {
-		*(*int32)(ptr) = int32(i)
-	} else if bw == 8 {
-		*(*int64)(ptr) = int64(i)
-	}
-}
-func (b *Builder) WriteDouble(f float64, byteWidth int) {
-	ptr := b.allocateUnsafe(byteWidth)
-	if byteWidth == 4 {
-		*(*float64)(ptr) = f
-	} else if byteWidth == 8 {
-		*(*float32)(ptr) = float32(f)
-	} else {
-		panic("invalid float width")
-	}
-}
-
 func (b *Builder) StringValue(s string) int {
 	//resetTo := b.buf.Len()
 	sloc := b.createBlob(stringToBytes(s), 1, FBTString)
-	if b.flags&BuilderFlagShareStrings > 0 {
-		if b.stringOffsetMap
+	if b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings {
 		// TODO
 	}
 	return sloc
@@ -304,15 +240,29 @@ func (b *Builder) StartMap() int {
 }
 
 func (b *Builder) MapField(key []byte, fn func(bld *Builder)) int {
+	if b.err != nil {
+		return 0
+	}
 	start := b.StartMapField(key)
 	fn(b)
-	return b.EndMap(start)
+	idx, err := b.EndMap(start)
+	if err != nil {
+		b.err = err
+	}
+	return idx
 }
 
 func (b *Builder) Map(fn func(bld *Builder)) int {
+	if b.err != nil {
+		return 0
+	}
 	start := b.StartMap()
 	fn(b)
-	return b.EndMap(start)
+	idx, err := b.EndMap(start)
+	if err != nil {
+		b.err = err
+	}
+	return idx
 }
 
 func (b *Builder) StartMapField(key []byte) int {
@@ -320,48 +270,68 @@ func (b *Builder) StartMapField(key []byte) int {
 	return len(b.stack)
 }
 
-func (b *Builder) EndVector(start int, typed, fixed bool) uint64 {
-	vec := b.createVector(start, len(b.stack)-start, 1, typed, fixed, nil)
+func (b *Builder) EndVector(start int, typed, fixed bool) (uint64, error) {
+	vec, err := b.createVector(start, len(b.stack)-start, 1, typed, fixed, nil)
+	if err != nil {
+		return 0, err
+	}
 	b.stack = b.stack[:start]
 	b.stack = append(b.stack, vec)
-	return vec.AsUInt()
+	return vec.AsUInt(), nil
 }
 
 func (b *Builder) Vector(typed, fixed bool, fn func(bld *Builder)) int {
+	if b.err != nil {
+		return 0
+	}
 	start := b.StartVector()
 	fn(b)
-	return int(b.EndVector(start, typed, fixed))
+	off, err := b.EndVector(start, typed, fixed)
+	if err != nil {
+		b.err = err
+	}
+	return int(off)
 }
 func (b *Builder) VectorField(key []byte, typed, fixed bool, fn func(bld *Builder)) int {
+	if b.err != nil {
+		return 0
+	}
 	b.Key(key)
 	return b.Vector(typed, fixed, fn)
 }
 
-func (b *Builder) EndMap(start int) int {
+func (b *Builder) EndMap(start int) (int, error) {
 	l := len(b.stack) - start
 	if l&1 > 0 {
-		panic("assertion failed")
+		return 0, ErrOddSizeMapContent
 	}
 	l /= 2
 	for key := start; key < len(b.stack); key += 2 {
 		if b.stack[key].typ != FBTKey {
-			panic("error: all key must be FBTKey")
+			return 0, fmt.Errorf("odd elemnt of map must be Key")
 		}
 	}
 	// TODO: implement sorting
-	keys := b.createVector(start, l, 2, true, false, nil)
-	vec := b.createVector(start+1, l, 2, false, false, &keys)
+	keys, err := b.createVector(start, l, 2, true, false, nil)
+	if err != nil {
+		return 0, err
+	}
+	vec, err := b.createVector(start+1, l, 2, false, false, &keys)
+	if err != nil {
+		return 0, err
+	}
 	b.stack = b.stack[:start]
 	b.stack = append(b.stack, vec)
-	return int(vec.AsUInt())
+	return int(vec.AsUInt()), nil
 }
 
-func (b *Builder) WriteOffset(o int, byteWidth int) {
+func (b *Builder) WriteOffset(o int, byteWidth int) error {
 	reloff := len(b.buf) - o
 	if byteWidth != 8 && reloff >= 1<<(byteWidth*8) {
-		panic("assertion failed")
+		return ErrOffsetOutOfRange
 	}
 	b.WriteUInt(uint64(reloff), byteWidth)
+	return nil
 }
 
 func (b *Builder) createBlob(data []byte, trailing int, t Type) int {
@@ -377,20 +347,21 @@ func (b *Builder) createBlob(data []byte, trailing int, t Type) int {
 	return sloc
 }
 
-func (b *Builder) WriteAny(v *value, byteWidth int) {
+func (b *Builder) WriteAny(v *value, byteWidth int) error {
 	switch v.typ {
 	case FBTNull, FBTInt:
 		b.WriteInt(v.AsInt(), byteWidth)
 	case FBTBool, FBTUint:
 		b.WriteUInt(v.AsUInt(), byteWidth)
 	case FBTFloat:
-		b.WriteDouble(v.AsFloat(), byteWidth)
+		return b.WriteDouble(v.AsFloat(), byteWidth)
 	default:
-		b.WriteOffset(int(v.AsUInt()), byteWidth)
+		return b.WriteOffset(int(v.AsUInt()), byteWidth)
 	}
+	return nil
 }
 
-func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys *value) value {
+func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys *value) (value, error) {
 	bitWidth := BitWidthMax(b.forceMinBitWidth, WidthU(uint64(vecLen)))
 	prefixElems := 1
 	if keys != nil {
@@ -405,16 +376,18 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 			if i == start {
 				vectorType = b.stack[i].typ
 			} else if b.stack[i].typ != vectorType {
-				panic("inconsistent type")
+				return value{}, fmt.Errorf("inconsistent type")
 			}
 		}
 	}
 	if fixed && !IsTypedVectorElementType(vectorType) {
-		panic("item type should be one of Int / UInt / Float / Key")
+		return value{}, fmt.Errorf("item type should be one of Int / UInt / Float / Key")
 	}
 	byteWidth := b.align(bitWidth)
 	if keys != nil {
-		b.WriteOffset(int(keys.d), byteWidth) // uint64
+		if err := b.WriteOffset(int(keys.d), byteWidth); err != nil {
+			return value{}, err
+		}
 		b.WriteUInt(1<<keys.minBitWidth, byteWidth)
 	}
 	if !fixed {
@@ -422,7 +395,9 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 	}
 	vloc := len(b.buf)
 	for i := start; i < len(b.stack); i += step {
-		b.WriteAny(&b.stack[i], byteWidth)
+		if err := b.WriteAny(&b.stack[i], byteWidth); err != nil {
+			return value{}, err
+		}
 	}
 	if !typed {
 		for i := start; i < len(b.stack); i += step {
@@ -445,49 +420,22 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 		d:           int64(vloc),
 		typ:         t,
 		minBitWidth: bitWidth,
-	}
+	}, nil
 }
 
 func (b *Builder) Write(v interface{}, byteWidth int) {
 
 }
 
-func GetScalarType(v interface{}) Type {
+func GetScalarType(v interface{}) (Type, error) {
 	switch v.(type) {
 	case float32, float64:
-		return FBTFloat
+		return FBTFloat, nil
 	case int8, int16, int32, int64:
-		return FBTInt
+		return FBTInt, nil
 	case uint8, uint16, uint32, uint64:
-		return FBTUint
+		return FBTUint, nil
 	default:
-		panic("assertion failed")
+		return FBTNull, fmt.Errorf("type %s is not scalar type", reflect.TypeOf(v).Name())
 	}
-}
-
-func (b *Builder) scalarVector(elems []interface{}, fixed bool) int {
-	vectorType := GetScalarType(elems[0])
-	l := len(elems)
-	byteWidth := int(unsafe.Sizeof(elems[0]))
-	bitWidth := WidthB(byteWidth)
-	if !(WidthU(uint64(l)) <= bitWidth) {
-		panic("overflow")
-	}
-	if !fixed {
-		b.WriteUInt(uint64(l), byteWidth)
-	}
-	vloc := len(b.buf)
-	for i := 0; i < l; i++ {
-		b.Write(elems[i], byteWidth)
-	}
-	fixedLen := 0
-	if fixed {
-		fixedLen = 0
-	}
-	b.stack = append(b.stack, value{
-		d:           int64(vloc),
-		typ:         ToTypedVector(vectorType, fixedLen),
-		minBitWidth: bitWidth,
-	})
-	return vloc
 }

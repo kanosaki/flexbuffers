@@ -1,0 +1,3 @@
+//+build !unsafe
+
+package flexbuffers

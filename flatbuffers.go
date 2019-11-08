@@ -295,19 +295,22 @@ type TypedVector struct {
 }
 
 // optimized implementation to use in map lookup
-func (v TypedVector) compareAtKey(i int, key []byte) int {
-	ind := v.buf.Indirect(v.offset+i*int(v.byteWidth), v.byteWidth)
+func (v TypedVector) compareAtKey(i int, key []byte) (int, error) {
+	ind, err := v.buf.Indirect(v.offset+i*int(v.byteWidth), v.byteWidth)
+	if err != nil {
+		return 0, err
+	}
 	for i, c := range key {
 		kc := v.buf[ind+i]
 		if kc == 0 {
-			return -1
+			return -1, nil
 		} else if kc > c {
-			return 1
+			return 1, nil
 		} else if kc < c {
-			return -1
+			return -1, nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
 func (v TypedVector) AtRef(i int, ref *Reference) {
@@ -398,19 +401,27 @@ func EmptyMap() Map {
 	}
 }
 
-func (m Map) Keys() TypedVector {
+func (m Map) Keys() (TypedVector, error) {
 	numPrefixedData := 3
 	keysOffset := m.offset - int(m.byteWidth)*numPrefixedData
+	off, err := m.buf.Indirect(keysOffset, m.byteWidth)
+	if err != nil {
+		return TypedVector{}, nil
+	}
+	bw, err := m.buf.ReadUInt64(keysOffset+int(m.byteWidth), m.byteWidth)
+	if err != nil {
+		return TypedVector{}, nil
+	}
 	return TypedVector{
 		Sized: Sized{
 			Object{
 				buf:       m.buf,
-				offset:    m.buf.Indirect(keysOffset, m.byteWidth),
-				byteWidth: uint8(m.buf.ReadUInt64(keysOffset+int(m.byteWidth), m.byteWidth)),
+				offset:    off,
+				byteWidth: uint8(bw),
 			},
 		},
 		type_: FBTKey,
-	}
+	}, nil
 }
 
 func (m Map) Values() Vector {
@@ -425,27 +436,42 @@ func (m Map) Values() Vector {
 	}
 }
 
-func (m Map) Get(key string) Reference {
-	keys := m.Keys()
+func (m Map) Get(key string) (Reference, error) {
+	keys, err := m.Keys()
+	if err != nil {
+		return Reference{}, err
+	}
 	keysSize := keys.Size()
 	keyBytes := *(*[]byte)(unsafe.Pointer(&key))
 	if keysSize > LookupBinarySearchThreshold {
 		// binary search
+		var searchErr error
 		foundIdx := sort.Search(keysSize, func(i int) bool {
-			return keys.compareAtKey(i, keyBytes) >= 0
+			comp, err := keys.compareAtKey(i, keyBytes)
+			if err != nil {
+				searchErr = err
+				return true
+			}
+			return comp >= 0
 		})
+		if searchErr != nil {
+			return Reference{}, searchErr
+		}
 		if foundIdx < keysSize { // found
 			var ref Reference
 			keys.AtRef(foundIdx, &ref)
-			sv := ref.asStringKey()
+			sv, err := ref.asStringKey()
+			if err != nil {
+				return Reference{}, err
+			}
 			if sv == key {
 				m.Values().AtRef(foundIdx, &ref)
-				return ref
+				return ref, nil
 			} else {
-				return NullReference
+				return Reference{}, ErrNotFound
 			}
 		} else {
-			return NullReference
+			return Reference{}, ErrNotFound
 		}
 	} else {
 		// linear search
@@ -454,9 +480,18 @@ func (m Map) Get(key string) Reference {
 			sv := candidate.AsKey().StringValue()
 			if sv == key {
 				v := m.Values().At(i)
-				return v
+				return v, nil
 			}
 		}
+		return Reference{}, ErrNotFound
+	}
+}
+
+
+func (m Map) GetOrNull(key string) Reference {
+	r, err := m.Get(key)
+	if err != nil {
 		return NullReference
 	}
+	return r
 }

@@ -94,10 +94,10 @@ func TestRawFromTestData(t *testing.T) {
 			"primitive_corners.flexbuf",
 			func(r Reference, a *assert.Assertions) {
 				m := r.AsMap()
-				a.Equal(int64(math.MaxInt32), m.Get("int32_max").AsInt64())
-				a.Equal(int64(math.MinInt32), m.Get("int32_min").AsInt64())
-				a.Equal(int64(math.MaxInt64), m.Get("int64_max").AsInt64())
-				a.Equal(int64(math.MinInt64), m.Get("int64_min").AsInt64())
+				a.Equal(int64(math.MaxInt32), m.GetOrNull("int32_max").AsInt64())
+				a.Equal(int64(math.MinInt32), m.GetOrNull("int32_min").AsInt64())
+				a.Equal(int64(math.MaxInt64), m.GetOrNull("int64_max").AsInt64())
+				a.Equal(int64(math.MinInt64), m.GetOrNull("int64_min").AsInt64())
 			},
 		},
 		{
@@ -130,7 +130,7 @@ func TestRawFromTestData(t *testing.T) {
 		{
 			"simple_string.flexbuf",
 			func(r Reference, a *assert.Assertions) {
-				a.Equal("hello flexbuffers!", r.AsString().StringValue())
+				a.Equal("hello flexbuffers!", r.AsStringRef().StringValue())
 			},
 		},
 		{
@@ -170,7 +170,7 @@ func TestRawFromTestData(t *testing.T) {
 			"simple_map.flexbuf",
 			func(r Reference, a *assert.Assertions) {
 				m := r.AsMap()
-				s := m.Get("foo").AsString()
+				s := m.GetOrNull("foo").AsStringRef()
 				a.Equal(1, m.Size())
 				a.Equal("bar", s.StringValue())
 				a.Equal("bar", s.UnsafeStringValue())
@@ -181,12 +181,12 @@ func TestRawFromTestData(t *testing.T) {
 			func(r Reference, a *assert.Assertions) {
 				m := r.AsMap()
 				a.Equal(3, m.Size())
-				s := m.Get("foo").AsString()
+				s := m.GetOrNull("foo").AsStringRef()
 				a.Equal("bar", s.StringValue())
 				a.Equal("bar", s.UnsafeStringValue())
-				i := m.Get("a").AsInt64()
+				i := m.GetOrNull("a").AsInt64()
 				a.Equal(int64(123), i)
-				d := m.Get("b").AsFloat64()
+				d := m.GetOrNull("b").AsFloat64()
 				a.Equal(12.0, d)
 			},
 		},
@@ -195,11 +195,11 @@ func TestRawFromTestData(t *testing.T) {
 			func(r Reference, a *assert.Assertions) {
 				m := r.AsMap()
 				a.Equal(3, m.Size())
-				a.Equal(int64(123), m.Get("int").AsInt64())
-				m1 := m.Get("map").AsMap()
+				a.Equal(int64(123), m.GetOrNull("int").AsInt64())
+				m1 := m.GetOrNull("map").AsMap()
 				a.Equal(1, m1.Size())
-				a.Equal("bar", m1.Get("foo").AsString().StringValue())
-				v1 := m.Get("vec").AsVector()
+				a.Equal("bar", m1.GetOrNull("foo").AsStringRef().StringValue())
+				v1 := m.GetOrNull("vec").AsVector()
 				a.Equal(3, v1.Size())
 				a.Equal(int64(1), v1.At(0).AsInt64())
 				a.Equal(int64(256), v1.At(1).AsInt64())

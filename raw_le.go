@@ -1,122 +1,130 @@
-//+build amd64
+//+build unsafe
 
 package flexbuffers
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"unsafe"
 )
 
+var (
+	ErrUpdateDoesntFit = errors.New("update data doesn't fit")
+)
+
 type Raw []byte
 
-func (b Raw) ReadUInt64(offset int, byteWidth uint8) uint64 {
+func (b Raw) ReadUInt64(offset int, byteWidth uint8) (uint64, error) {
 	if byteWidth < 4 {
 		if byteWidth < 2 {
-			return uint64(*(*uint8)(unsafe.Pointer(&b[offset])))
+			return uint64(*(*uint8)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return uint64(*(*uint16)(unsafe.Pointer(&b[offset])))
+			return uint64(*(*uint16)(unsafe.Pointer(&b[offset]))), nil
 		}
 	} else {
 		if byteWidth < 8 {
-			return uint64(*(*uint32)(unsafe.Pointer(&b[offset])))
+			return uint64(*(*uint32)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return uint64(*(*uint64)(unsafe.Pointer(&b[offset])))
+			return uint64(*(*uint64)(unsafe.Pointer(&b[offset]))), nil
 		}
 	}
 }
 
-func (b Raw) ReadInt64(offset int, byteWidth uint8) int64 {
+func (b Raw) ReadInt64(offset int, byteWidth uint8) (int64, error) {
 	if byteWidth < 4 {
 		if byteWidth < 2 {
-			return int64(*(*int8)(unsafe.Pointer(&b[offset])))
+			return int64(*(*int8)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return int64(*(*int16)(unsafe.Pointer(&b[offset])))
+			return int64(*(*int16)(unsafe.Pointer(&b[offset]))), nil
 		}
 	} else {
 		if byteWidth < 8 {
-			return int64(*(*int32)(unsafe.Pointer(&b[offset])))
+			return int64(*(*int32)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return int64(*(*int64)(unsafe.Pointer(&b[offset])))
+			return int64(*(*int64)(unsafe.Pointer(&b[offset]))), nil
 		}
 	}
 }
 
-func (b Raw) ReadDouble(offset int, byteWidth uint8) float64 {
+func (b Raw) ReadDouble(offset int, byteWidth uint8) (float64, error) {
 	if byteWidth < 4 {
 		if byteWidth < 2 {
-			panic("float8 is not supported")
+			return 0.0, fmt.Errorf("float8 is not supported")
 		} else {
-			panic("float16 is not supported")
+			return 0.0, fmt.Errorf("float16 is not supported")
 		}
 	} else {
 		if byteWidth < 8 {
-			return float64(*(*float32)(unsafe.Pointer(&b[offset])))
+			return float64(*(*float32)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return *(*float64)(unsafe.Pointer(&b[offset]))
+			return *(*float64)(unsafe.Pointer(&b[offset])), nil
 		}
 	}
 }
 
-func (b Raw) WriteInt64(offset int, byteWidth uint8, value int64) bool {
+func (b Raw) WriteInt64(offset int, byteWidth uint8, value int64) error {
 	valueWidth := WidthI(value)
 	fits := (1 << valueWidth) <= byteWidth
-	if fits {
-		if valueWidth == BitWidth8 {
-			*(*int8)(unsafe.Pointer(&b[offset])) = int8(value)
-		} else if valueWidth == BitWidth16 {
-			*(*int16)(unsafe.Pointer(&b[offset])) = int16(value)
-		} else if valueWidth == BitWidth32 {
-			*(*int32)(unsafe.Pointer(&b[offset])) = int32(value)
-		} else {
-			*(*int64)(unsafe.Pointer(&b[offset])) = value
-		}
+	if !fits {
+		return ErrUpdateDoesntFit
 	}
-	return fits
+	if valueWidth == BitWidth8 {
+		*(*int8)(unsafe.Pointer(&b[offset])) = int8(value)
+	} else if valueWidth == BitWidth16 {
+		*(*int16)(unsafe.Pointer(&b[offset])) = int16(value)
+	} else if valueWidth == BitWidth32 {
+		*(*int32)(unsafe.Pointer(&b[offset])) = int32(value)
+	} else {
+		*(*int64)(unsafe.Pointer(&b[offset])) = value
+	}
+	return nil
 }
 
-func (b Raw) WriteUInt64(offset int, byteWidth uint8, value uint64) bool {
+func (b Raw) WriteUInt64(offset int, byteWidth uint8, value uint64) error {
 	valueWidth := WidthU(value)
 	fits := (1 << valueWidth) <= byteWidth
-	if fits {
-		if valueWidth == BitWidth8 {
-			*(*uint8)(unsafe.Pointer(&b[offset])) = uint8(value)
-		} else if valueWidth == BitWidth16 {
-			*(*uint16)(unsafe.Pointer(&b[offset])) = uint16(value)
-		} else if valueWidth == BitWidth32 {
-			*(*uint32)(unsafe.Pointer(&b[offset])) = uint32(value)
-		} else {
-			*(*uint64)(unsafe.Pointer(&b[offset])) = value
-		}
+	if !fits {
+		return ErrUpdateDoesntFit
 	}
-	return fits
+	if valueWidth == BitWidth8 {
+		*(*uint8)(unsafe.Pointer(&b[offset])) = uint8(value)
+	} else if valueWidth == BitWidth16 {
+		*(*uint16)(unsafe.Pointer(&b[offset])) = uint16(value)
+	} else if valueWidth == BitWidth32 {
+		*(*uint32)(unsafe.Pointer(&b[offset])) = uint32(value)
+	} else {
+		*(*uint64)(unsafe.Pointer(&b[offset])) = value
+	}
+	return nil
 }
 
-func (b Raw) WriteFloat(offset int, byteWidth uint8, value float64) bool {
+func (b Raw) WriteFloat(offset int, byteWidth uint8, value float64) error {
 	valueWidth := WidthF(value)
 	fits := (1 << valueWidth) <= byteWidth
 	if !fits {
-		return false
+		return ErrUpdateDoesntFit
 	}
 	if byteWidth == 4 {
 		*(*uint32)(unsafe.Pointer(&b[offset])) = math.Float32bits(float32(value))
 	} else if byteWidth == 8 {
 		*(*uint64)(unsafe.Pointer(&b[offset])) = math.Float64bits(value)
 	}
-	return true
+	return nil
 }
 
-func (b Raw) Indirect(offset int, byteWidth uint8) int {
+func (b Raw) Indirect(offset int, byteWidth uint8) (int, error) {
 	if byteWidth < 4 {
 		if byteWidth < 2 {
-			return offset - int(*(*uint8)(unsafe.Pointer(&b[offset])))
+			return offset - int(*(*uint8)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return offset - int(*(*uint16)(unsafe.Pointer(&b[offset])))
+			return offset - int(*(*uint16)(unsafe.Pointer(&b[offset]))), nil
 		}
 	} else {
 		if byteWidth < 8 {
-			return offset - int(*(*uint32)(unsafe.Pointer(&b[offset])))
+			return offset - int(*(*uint32)(unsafe.Pointer(&b[offset]))), nil
 		} else {
-			return offset - int(*(*uint64)(unsafe.Pointer(&b[offset])))
+			return offset - int(*(*uint64)(unsafe.Pointer(&b[offset]))), nil
 		}
 	}
 }
@@ -142,7 +150,7 @@ func (b Raw) InitTraverser(tv *Traverser) {
 	}
 }
 
-func (b Raw) Lookup(path ...string) Reference {
+func (b Raw) Lookup(path ...string) (Reference, error) {
 	var tv Traverser
 	b.InitTraverser(&tv)
 	tv.Seek(path)

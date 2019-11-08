@@ -31,6 +31,14 @@ func unsafeBufferString(buf []byte, offset, size int) string {
 	return *(*string)(unsafe.Pointer(&sh))
 }
 
+func readCStringBytes(buf []byte, offset int) []byte {
+	size := bytes.IndexByte(buf[offset:], 0)
+	if size < 0 {
+		panic("no null terminator")
+	}
+	return buf[offset:offset+size]
+}
+
 func unsafeReadCString(buf []byte, offset int) string {
 	size := bytes.IndexByte(buf[offset:], 0)
 	if size < 0 {

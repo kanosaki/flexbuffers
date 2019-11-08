@@ -3,6 +3,7 @@ module flexbuffers
 go 1.13
 
 require (
+	github.com/cespare/xxhash v1.1.0
 	github.com/dvyukov/go-fuzz v0.0.0-20190919153955-532ac05586a1 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect

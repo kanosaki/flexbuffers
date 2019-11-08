@@ -38,7 +38,7 @@ func BenchmarkFlexbuffersTraverseByReference(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		root := bld.Buffer().Root()
-		leaf := root.AsMap().Get("g").AsMap().Get("f").AsMap().Get("e").AsMap().Get("d").AsMap().Get("c").AsMap()
+		leaf := root.AsMap().GetOrNull("g").AsMap().GetOrNull("f").AsMap().GetOrNull("e").AsMap().GetOrNull("d").AsMap().GetOrNull("c").AsMap()
 		if leaf.Size() != 0 {
 			b.Fatal("assertion error")
 		}

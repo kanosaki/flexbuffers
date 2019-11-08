@@ -7,6 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func mustLookup(r Raw, path ...string) Reference {
+	res, err := r.Lookup(path...)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+
 func TestTraverser_Lookup(t *testing.T) {
 	a := assert.New(t)
 	b := NewBuilder()
@@ -31,12 +39,15 @@ func TestTraverser_Lookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := b.Buffer()
-	a.Equal(int64(10), root.Lookup("a", "a").AsInt64())
-	a.Equal(int64(40), root.Lookup("b", "d").AsInt64())
-	a.Equal("foo", root.Lookup("b", "e").AsString().StringValue())
-	a.Equal(int64(123), root.Lookup("c").AsInt64())
-	a.True(root.Lookup("foo").IsNull())
-	a.Equal("bar", root.Lookup("d", "a", "b").AsString().StringValue())
+	a.Equal(int64(10), mustLookup(root, "a", "a").AsInt64())
+	a.Equal(int64(40), mustLookup(root, "b", "d").AsInt64())
+	a.Equal("foo", mustLookup(root, "b", "e").AsStringRef().StringValue())
+	a.Equal(int64(123), mustLookup(root, "c").AsInt64())
+	a.Equal("bar", mustLookup(root, "d", "a", "b").AsStringRef().StringValue())
+
+	// empty data
+	_, err := root.Lookup("foo")
+	a.Equal(ErrNotFound, err)
 }
 
 func TestTraverser_LookupLargeData(t *testing.T) {
@@ -55,5 +66,5 @@ func TestTraverser_LookupLargeData(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := b.Buffer()
-	a.Equal(int64(900), root.Lookup("a-50", "b-90").AsInt64())
+	a.Equal(int64(900), mustLookup(root, "a-50", "b-90").AsInt64())
 }

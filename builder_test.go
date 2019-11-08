@@ -60,8 +60,8 @@ func TestBuildAndParse(t *testing.T) {
 				b.StringValue("hello world")
 			},
 			assertFn: func(a *assert.Assertions, r Reference) {
-				a.Equal("hello world", r.AsString().StringValue())
-				a.Equal("hello world", r.AsString().UnsafeStringValue())
+				a.Equal("hello world", r.AsStringRef().StringValue())
+				a.Equal("hello world", r.AsStringRef().UnsafeStringValue())
 			},
 		},
 		{
@@ -111,7 +111,7 @@ func TestBuildAndParse(t *testing.T) {
 				vec := r.AsVector()
 				a.Equal(int64(10), vec.At(0).AsInt64())
 				a.Equal(uint64(20), vec.At(1).AsUInt64())
-				a.Equal("Hello", vec.At(2).AsString().StringValue())
+				a.Equal("Hello", vec.At(2).AsStringRef().StringValue())
 			},
 		},
 		{
@@ -129,9 +129,9 @@ func TestBuildAndParse(t *testing.T) {
 			assertFn: func(a *assert.Assertions, r Reference) {
 				v1 := r.AsVector()
 				a.Equal(int64(10), v1.At(0).AsInt64())
-				a.Equal("Hello", v1.At(1).AsString().StringValue())
+				a.Equal("Hello", v1.At(1).AsStringRef().StringValue())
 				v2 := v1.At(2).AsVector()
-				a.Equal("World", v2.At(0).AsString().StringValue())
+				a.Equal("World", v2.At(0).AsStringRef().StringValue())
 				a.Equal(int64(20), v2.At(1).AsInt64())
 			},
 		},
@@ -146,9 +146,9 @@ func TestBuildAndParse(t *testing.T) {
 			},
 			assertFn: func(a *assert.Assertions, r Reference) {
 				m := r.AsMap()
-				a.Equal(int64(10), m.Get("a").AsInt64())
-				a.Equal(int64(20), m.Get("b").AsInt64())
-				a.Equal(int64(30), m.Get("c").AsInt64())
+				a.Equal(int64(10), m.GetOrNull("a").AsInt64())
+				a.Equal(int64(20), m.GetOrNull("b").AsInt64())
+				a.Equal(int64(30), m.GetOrNull("c").AsInt64())
 			},
 		},
 		{
@@ -164,11 +164,11 @@ func TestBuildAndParse(t *testing.T) {
 			},
 			assertFn: func(a *assert.Assertions, r Reference) {
 				m := r.AsMap()
-				a.Equal(uint64(10), m.Get("a").AsUInt64())
-				a.Equal(int64(20), m.Get("b").AsInt64())
-				a.Equal("HELLO", m.Get("c").AsString().StringValue())
-				a.Equal([]byte("WORLD"), m.Get("d").AsBlob().Data())
-				a.Equal(float32(12.3), m.Get("e").AsFloat32())
+				a.Equal(uint64(10), m.GetOrNull("a").AsUInt64())
+				a.Equal(int64(20), m.GetOrNull("b").AsInt64())
+				a.Equal("HELLO", m.GetOrNull("c").AsStringRef().StringValue())
+				a.Equal([]byte("WORLD"), m.GetOrNull("d").AsBlob().Data())
+				a.Equal(float32(12.3), m.GetOrNull("e").AsFloat32())
 			},
 		},
 		{
@@ -184,10 +184,10 @@ func TestBuildAndParse(t *testing.T) {
 			},
 			assertFn: func(a *assert.Assertions, r Reference) {
 				m1 := r.AsMap()
-				a.Equal(int64(123), m1.Get("a").AsInt64())
-				m2 := m1.Get("b").AsMap()
-				a.Equal("world", m2.Get("c").AsString().StringValue())
-				a.Equal(float32(12.3), m1.Get("d").AsFloat32())
+				a.Equal(int64(123), m1.GetOrNull("a").AsInt64())
+				m2 := m1.GetOrNull("b").AsMap()
+				a.Equal("world", m2.GetOrNull("c").AsStringRef().StringValue())
+				a.Equal(float32(12.3), m1.GetOrNull("d").AsFloat32())
 			},
 		},
 		{
@@ -207,8 +207,8 @@ func TestBuildAndParse(t *testing.T) {
 				m1 := r.AsMap()
 				a.Equal(
 					"v-80-90",
-					m1.Get("map-80").AsMap().
-						Get("key-90").AsString().
+					m1.GetOrNull("map-80").AsMap().
+						GetOrNull("key-90").AsStringRef().
 						StringValue())
 			},
 		},
