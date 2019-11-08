@@ -150,6 +150,14 @@ func (b Raw) InitTraverser(tv *Traverser) {
 	}
 }
 
+func (b Raw) LookupOrNull(path ...string) Reference {
+	r, err := b.Lookup(path...)
+	if err != nil {
+		return NullReference
+	}
+	return r
+}
+
 func (b Raw) Lookup(path ...string) (Reference, error) {
 	var tv Traverser
 	b.InitTraverser(&tv)
