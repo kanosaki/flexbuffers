@@ -89,6 +89,7 @@ _deps
 fuzz/corpus
 fuzz/crashers
 fuzz/suppressions
+*.zip
 
 # Binaries
 samplegen/flexbuffers-samplegen

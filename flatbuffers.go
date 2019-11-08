@@ -256,6 +256,12 @@ func EmptyBlob() Blob {
 	}
 }
 
+type AnyVector interface {
+	AtRef(i int, ref *Reference)
+	At(i int) Reference
+	Size() int
+}
+
 type Vector struct {
 	Sized
 }
@@ -356,6 +362,21 @@ type FixedTypedVector struct {
 	Object
 	type_ Type
 	len_  uint8
+}
+
+func (v FixedTypedVector) AtRef(i int, ref *Reference) {
+	if i >= int(v.len_) {
+		return
+	}
+	ref.data_ = v.buf
+	ref.offset = v.offset + i*int(v.byteWidth)
+	ref.parentWidth = v.byteWidth
+	ref.byteWidth = 1
+	ref.type_ = v.type_
+}
+
+func (v FixedTypedVector) Size() int {
+	return int(v.len_)
 }
 
 func (v FixedTypedVector) At(i int) Reference {

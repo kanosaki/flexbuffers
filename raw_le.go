@@ -129,6 +129,11 @@ func (b Raw) Indirect(offset int, byteWidth uint8) (int, error) {
 	}
 }
 
+func (b Raw) Validate() error {
+	root := b.Root()
+	return root.Validate()
+}
+
 func (b Raw) Root() Reference {
 	_ = b[len(b)-3] // check boundary
 	byteWidth := b[len(b)-1]

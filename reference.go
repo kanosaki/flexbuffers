@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"unsafe"
 )
 
@@ -471,13 +472,16 @@ func (r Reference) asStringKey() (string, error) {
 	}
 }
 func (r Reference) AsKey() Key {
-	v, _ := r.Key()
+	v, err := r.Key()
+	if err == ErrTypeDoesNotMatch {
+		return EmptyKey()
+	}
 	return v
 }
 
 func (r Reference) Key() (Key, error) {
 	if r.type_ != FBTKey {
-		return EmptyKey(), ErrTypeDoesNotMatch
+		return Key{}, ErrTypeDoesNotMatch
 	}
 	ind, err := r.indirect()
 	if err != nil {
@@ -537,6 +541,19 @@ func (r Reference) Blob() (Blob, error) {
 		return EmptyBlob(), nil
 	}
 }
+
+func (r Reference) AnyVector() (AnyVector, error) {
+	if r.type_ == FBTVector {
+		return r.Vector()
+	} else if r.IsTypedVector() {
+		return r.TypedVector()
+	} else if r.IsFixedTypedVector() {
+		return r.FixedTypedVector()
+	} else {
+		return nil, ErrTypeDoesNotMatch
+	}
+}
+
 func (r Reference) AsVector() Vector {
 	v, _ := r.Vector()
 	return v
@@ -729,4 +746,75 @@ func (r Reference) MutateString(s string) bool {
 	copy(r.data_[r.offset:], data)
 	r.data_[r.offset+len(data)] = 0 // NUL terminator
 	return true
+}
+
+func (r Reference) Validate() (err error) {
+	switch r.type_ {
+	case FBTInt, FBTIndirectInt:
+		_, err = r.Int64()
+	case FBTUint, FBTIndirectUInt:
+		_, err = r.UInt64()
+	case FBTFloat:
+		_, err = r.Float64()
+	case FBTKey:
+		k, err := r.Key()
+		if err != nil {
+			return err
+		}
+		if strings.Index(k.StringValue(), "\x00") >= 0 {
+			return fmt.Errorf("key contains null char")
+		}
+	case FBTString:
+		s, err := r.StringRef()
+		if err != nil {
+			return err
+		}
+		s.StringValue()
+	case FBTMap:
+		m, err := r.Map()
+		if err != nil {
+			return err
+		}
+		keys, err := m.Keys()
+		if err != nil {
+			return err
+		}
+		var v Reference
+		for i := 0; i < m.Size(); i++ {
+			m.AtRef(i, &v)
+			if err := v.Validate(); err != nil {
+				return err
+			}
+			if err := keys.At(i).Validate(); err != nil {
+				return err
+			}
+		}
+	case FBTVector:
+		vec, err := r.Vector()
+		if err != nil {
+			return err
+		}
+		var v Reference
+		for i := 0; i < vec.Size(); i++ {
+			vec.AtRef(i, &v)
+			if err := v.Validate(); err != nil {
+				return err
+			}
+		}
+	default:
+		anyVec, err := r.AnyVector()
+		if err == nil {
+			var v Reference
+			for i := 0; i < anyVec.Size(); i++ {
+				anyVec.AtRef(i, &v)
+				if err := v.Validate(); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		err = fmt.Errorf("type is invalid: %d", r.type_)
+	}
+	return
 }
