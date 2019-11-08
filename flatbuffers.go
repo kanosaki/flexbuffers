@@ -8,7 +8,7 @@ import (
 	"unsafe"
 )
 
-const(
+const (
 	LookupBinarySearchThreshold = 4
 )
 
@@ -168,19 +168,27 @@ type Sized struct {
 }
 
 func (s Sized) Size() int {
+	if len(s.buf) <= s.offset || s.offset - int(s.byteWidth) < 0 {
+		return 0 // FIXME
+	}
+	var ret int
 	if s.byteWidth < 4 {
 		if s.byteWidth < 2 {
-			return int(*(*uint8)(unsafe.Pointer(&s.buf[s.offset-1])))
+			ret = int(*(*uint8)(unsafe.Pointer(&s.buf[s.offset-1])))
 		} else {
-			return int(*(*uint16)(unsafe.Pointer(&s.buf[s.offset-2])))
+			ret = int(*(*uint16)(unsafe.Pointer(&s.buf[s.offset-2])))
 		}
 	} else {
 		if s.byteWidth < 8 {
-			return int(*(*uint32)(unsafe.Pointer(&s.buf[s.offset-4])))
+			ret = int(*(*uint32)(unsafe.Pointer(&s.buf[s.offset-4])))
 		} else {
-			return int(*(*uint64)(unsafe.Pointer(&s.buf[s.offset-8])))
+			ret = int(*(*uint64)(unsafe.Pointer(&s.buf[s.offset-8])))
 		}
 	}
+	if ret < 0 {
+		return 0 // FIXME
+	}
+	return ret
 }
 
 type Key struct {
@@ -188,7 +196,11 @@ type Key struct {
 }
 
 func (k Key) StringValue() string {
-	return unsafeReadCString(k.buf, k.offset)
+	s, err := unsafeReadCString(k.buf, k.offset)
+	if err != nil {
+		return ""
+	}
+	return s
 }
 
 func EmptyKey() Key {
@@ -207,6 +219,9 @@ type String struct {
 
 func (s String) StringValue() string {
 	size := s.Size()
+	if s.offset < 0 || len(s.buf) <= s.offset+size {
+		return "" // FIXME
+	}
 	return string(s.buf[s.offset : s.offset+size]) // trim last nil terminator
 }
 
@@ -271,7 +286,12 @@ func (v Vector) AtRef(i int, ref *Reference) {
 	if i >= l {
 		return
 	}
-	packedType := v.buf[v.offset+l*int(v.byteWidth)+i]
+	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
+	if len(v.buf) <= packedTypeOffset {
+		*ref = NullReference
+		return
+	}
+	packedType := v.buf[packedTypeOffset]
 	setReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType, ref)
 }
 func (v Vector) At(i int) Reference {
@@ -507,7 +527,6 @@ func (m Map) Get(key string) (Reference, error) {
 		return Reference{}, ErrNotFound
 	}
 }
-
 
 func (m Map) GetOrNull(key string) Reference {
 	r, err := m.Get(key)

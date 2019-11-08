@@ -221,3 +221,27 @@ func TestRawFromTestData(t *testing.T) {
 		})
 	}
 }
+
+func TestRawOffsetError(t *testing.T) {
+	a := assert.New(t)
+	r := Raw([]byte{})
+	for i := 0; i < 4; i++ {
+		bw := uint8(math.Pow(2, float64(i)))
+		_, err := r.ReadInt64(0, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+		_, err = r.ReadUInt64(0, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+		_, err = r.ReadDouble(0, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+	}
+	r = []byte{1, 2, 3}
+	for i := 0; i < 4; i++ {
+		bw := uint8(math.Pow(2, float64(i)))
+		_, err := r.ReadInt64(2, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+		_, err = r.ReadUInt64(2, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+		_, err = r.ReadDouble(2, bw)
+		a.Equal(ErrOffsetOutOfRange, err)
+	}
+}

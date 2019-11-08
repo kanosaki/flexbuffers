@@ -3,6 +3,7 @@ package flexbuffers
 import "C"
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"unsafe"
 )
@@ -36,13 +37,16 @@ func readCStringBytes(buf []byte, offset int) []byte {
 	if size < 0 {
 		panic("no null terminator")
 	}
-	return buf[offset:offset+size]
+	return buf[offset : offset+size]
 }
 
-func unsafeReadCString(buf []byte, offset int) string {
+func unsafeReadCString(buf []byte, offset int) (string, error) {
+	if offset < 0 || len(buf) <= offset {
+		return "", ErrOffsetOutOfRange
+	}
 	size := bytes.IndexByte(buf[offset:], 0)
 	if size < 0 {
-		panic("null not found")
+		return "", fmt.Errorf("null not found")
 	}
-	return unsafeBufferString(buf, offset, size)
+	return unsafeBufferString(buf, offset, size), nil
 }

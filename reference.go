@@ -466,7 +466,7 @@ func (r Reference) asStringKey() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return unsafeReadCString(r.data_, ind), nil
+		return unsafeReadCString(r.data_, ind)
 	} else {
 		return "", nil
 	}
