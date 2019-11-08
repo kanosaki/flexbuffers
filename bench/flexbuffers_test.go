@@ -54,7 +54,7 @@ func BenchmarkFlexbuffersTraverseByTraverser(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		root := bld.Buffer()
-		tv := root.Lookup("g", "f", "e", "d", "c")
+		tv := root.LookupOrNull("g", "f", "e", "d", "c")
 		if tv.AsMap().Size() != 0 {
 			b.Fatal("assertion error")
 		}

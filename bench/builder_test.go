@@ -49,7 +49,7 @@ func TestCheckBenchmarkFlexbufferRaw(t *testing.T) {
 	fb := flexbuffers.Raw(res)
 	a := assert.New(t)
 
-	a.Equal(int64(10), fb.Lookup("x", "a").AsInt64())
+	a.Equal(int64(10), fb.LookupOrNull("x", "a").AsInt64())
 	fmt.Printf("Flexbuffers Size: %d\n", len(res))
 }
 
