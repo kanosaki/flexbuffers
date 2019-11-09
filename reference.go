@@ -816,8 +816,17 @@ func (r Reference) MutateString(s string) bool {
 	r.data_[r.offset+len(data)] = 0 // NUL terminator
 	return true
 }
-
 func (r Reference) Validate() (err error) {
+	visited := make(map[int]struct{})
+	return r.validate(visited)
+}
+
+func (r Reference) validate(visited map[int]struct{}) (err error) {
+	if _, ok := visited[r.offset]; ok {
+		return ErrRecursiveData
+	}
+	visited[r.offset] = struct{}{}
+
 	switch r.type_ {
 	case FBTInt, FBTIndirectInt:
 		_, err = r.Int64()
@@ -860,13 +869,13 @@ func (r Reference) Validate() (err error) {
 			if err := keys.AtRef(i, &key); err != nil {
 				return err
 			}
-			if err := key.Validate(); err != nil {
+			if err := key.validate(visited); err != nil {
 				return err
 			}
 			if err := m.AtRef(i, &value); err != nil {
 				return err
 			}
-			if err := value.Validate(); err != nil {
+			if err := value.validate(visited); err != nil {
 				return err
 			}
 		}
@@ -884,7 +893,10 @@ func (r Reference) Validate() (err error) {
 			if err := vec.AtRef(i, &v); err != nil {
 				return err
 			}
-			if err := v.Validate(); err != nil {
+			if v.offset == vec.offset {
+				return ErrRecursiveData
+			}
+			if err := v.validate(visited); err != nil {
 				return err
 			}
 		}
@@ -900,7 +912,7 @@ func (r Reference) Validate() (err error) {
 				if err := anyVec.AtRef(i, &v); err != nil {
 					return err
 				}
-				if err := v.Validate(); err != nil {
+				if err := v.validate(visited); err != nil {
 					return err
 				}
 			}

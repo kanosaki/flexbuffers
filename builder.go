@@ -14,6 +14,7 @@ var (
 	ErrOddSizeMapContent = errors.New("map expecting even items, but got odd items")
 	ErrOutOfRange        = errors.New("out of range, might be broken data")
 	ErrInvalidData       = errors.New("invalid data")
+	ErrRecursiveData     = errors.New("invalid data: data has a cyclic offset")
 	ErrNoNullByte        = errors.New("no null terminator found")
 )
 

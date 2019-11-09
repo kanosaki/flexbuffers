@@ -173,7 +173,6 @@ func (s Sized) SizeOrZero() int {
 }
 
 func (s Sized) Size() (int, error) {
-
 	sizeOffset := s.offset - int(s.byteWidth)
 	if sizeOffset < 0 || len(s.buf) <= sizeOffset {
 		return 0, ErrOutOfRange
@@ -234,10 +233,11 @@ func (s String) StringValue() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if s.offset < 0 || len(s.buf) <= s.offset+size {
+	endOffset := s.offset + size
+	if s.offset < 0 || len(s.buf) <= s.offset || endOffset < 0 || len(s.buf) <= endOffset {
 		return "", ErrOutOfRange
 	}
-	return string(s.buf[s.offset : s.offset+size]), nil // trim last nil terminator
+	return string(s.buf[s.offset:endOffset]), nil // trim last nil terminator
 }
 
 func (s String) UnsafeStringValueOrEmpty() string {
@@ -250,7 +250,7 @@ func (s String) UnsafeStringValue() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(s.buf) <= s.offset+size || s.offset < 0 {
+	if s.offset < 0 || len(s.buf) <= s.offset || len(s.buf) - s.offset < size {
 		return "", ErrOutOfRange
 	}
 	var sh reflect.StringHeader
@@ -533,6 +533,12 @@ func (m Map) Keys() (TypedVector, error) {
 	bw, err := m.buf.ReadUInt64(keysOffset+int(m.byteWidth), m.byteWidth)
 	if err != nil {
 		return TypedVector{}, nil
+	}
+	if bw <= 0 || bw > 8 {
+		return TypedVector{}, ErrInvalidData
+	}
+	if off < 0 || len(m.buf) <= off {
+		return TypedVector{}, ErrOutOfRange
 	}
 	return TypedVector{
 		Sized: Sized{
