@@ -112,11 +112,12 @@ func (t *Traverser) Current() (Reference, error) {
 	if t.offset == -1 {
 		return Reference{}, ErrNotFound
 	}
-	return Reference{
+	r := Reference{
 		data_:       t.buf,
 		offset:      t.offset,
 		parentWidth: uint8(t.parentWidth),
 		byteWidth:   uint8(t.byteWidth),
 		type_:       t.typ,
-	}, nil
+	}
+	return r, r.CheckBoundary()
 }

@@ -167,9 +167,14 @@ type Sized struct {
 	Object
 }
 
-func (s Sized) Size() int {
-	if len(s.buf) <= s.offset || s.offset - int(s.byteWidth) < 0 {
-		return 0 // FIXME
+func (s Sized) SizeOrZero() int {
+	v, _ := s.Size()
+	return v
+}
+
+func (s Sized) Size() (int, error) {
+	if len(s.buf) <= s.offset || s.offset-int(s.byteWidth) < 0 {
+		return 0, ErrOutOfRange
 	}
 	var ret int
 	if s.byteWidth < 4 {
@@ -186,9 +191,9 @@ func (s Sized) Size() int {
 		}
 	}
 	if ret < 0 {
-		return 0 // FIXME
+		return 0, ErrInvalidData
 	}
-	return ret
+	return ret, nil
 }
 
 type Key struct {
@@ -217,25 +222,48 @@ type String struct {
 	Sized
 }
 
-func (s String) StringValue() string {
-	size := s.Size()
-	if s.offset < 0 || len(s.buf) <= s.offset+size {
-		return "" // FIXME
-	}
-	return string(s.buf[s.offset : s.offset+size]) // trim last nil terminator
+func (s String) StringValueOrEmpty() string {
+	v, _ := s.StringValue()
+	return v
 }
 
-func (s String) UnsafeStringValue() string {
-	size := s.Size()
+func (s String) StringValue() (string, error) {
+	size, err := s.Size()
+	if err != nil {
+		return "", err
+	}
+	if s.offset < 0 || len(s.buf) <= s.offset+size {
+		return "", ErrOutOfRange
+	}
+	return string(s.buf[s.offset : s.offset+size]), nil // trim last nil terminator
+}
+
+func (s String) UnsafeStringValueOrEmpty() string {
+	v, _ := s.UnsafeStringValue()
+	return v
+}
+
+func (s String) UnsafeStringValue() (string, error) {
+	size, err := s.Size()
+	if err != nil {
+		return "", err
+	}
+	if len(s.buf) <= s.offset || s.offset < 0 {
+		return "", ErrOutOfRange
+	}
 	var sh reflect.StringHeader
 	sh.Len = size
 	sh.Data = (uintptr)(unsafe.Pointer(&s.buf[s.offset]))
-	return *(*string)(unsafe.Pointer(&sh))
+	return *(*string)(unsafe.Pointer(&sh)), nil
 }
 
-func (s String) IsEmpty() bool {
+func (s String) IsEmpty() (bool, error) {
 	es := EmptyString()
-	return bytes.Equal(s.buf[s.offset:s.Size()], es.buf[es.offset:es.Size()])
+	sz, err := s.Size()
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(s.buf[s.offset:s.offset+sz], es.buf[es.offset:es.offset+es.SizeOrZero()]), nil
 }
 
 // TODO: define as var?
@@ -255,8 +283,16 @@ type Blob struct {
 	Sized
 }
 
-func (b Blob) Data() []byte {
-	return b.buf[b.offset : b.offset+b.Size()]
+func (b Blob) DataOrEmpty() []byte {
+	v, _ := b.Data()
+	return v
+}
+func (b Blob) Data() ([]byte, error) {
+	sz, err := b.Size()
+	if err != nil {
+		return nil, err
+	}
+	return b.buf[b.offset : b.offset+sz], nil
 }
 
 func EmptyBlob() Blob {
@@ -272,34 +308,52 @@ func EmptyBlob() Blob {
 }
 
 type AnyVector interface {
-	AtRef(i int, ref *Reference)
-	At(i int) Reference
-	Size() int
+	AtRef(i int, ref *Reference) error
+	At(i int) (Reference, error)
+	Size() (int, error)
 }
 
 type Vector struct {
 	Sized
 }
 
-func (v Vector) AtRef(i int, ref *Reference) {
-	l := v.Size()
-	if i >= l {
-		return
+func (v Vector) AtRef(i int, ref *Reference) error {
+	l, err := v.Size()
+	if err != nil {
+		return err
+	}
+	if i >= l || i < 0 {
+		return ErrNotFound
 	}
 	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
 	if len(v.buf) <= packedTypeOffset {
-		*ref = NullReference
-		return
+		return ErrOutOfRange
 	}
 	packedType := v.buf[packedTypeOffset]
-	setReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType, ref)
+	return setReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType, ref)
 }
-func (v Vector) At(i int) Reference {
-	l := v.Size()
-	if i >= l {
+
+func (v Vector) AtOrNull(i int) Reference {
+	val, err := v.At(i)
+	if err != nil {
 		return NullReference
 	}
-	packedType := v.buf[v.offset+l*int(v.byteWidth)+i]
+	return val
+}
+
+func (v Vector) At(i int) (Reference, error) {
+	l, err := v.Size()
+	if err != nil {
+		return Reference{}, err
+	}
+	if i >= l || i < 0 {
+		return Reference{}, ErrNotFound
+	}
+	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
+	if len(v.buf) <= packedTypeOffset {
+		return Reference{}, ErrOutOfRange
+	}
+	packedType := v.buf[packedTypeOffset]
 	return NewReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType)
 }
 
@@ -339,22 +393,37 @@ func (v TypedVector) compareAtKey(i int, key []byte) (int, error) {
 	return 0, nil
 }
 
-func (v TypedVector) AtRef(i int, ref *Reference) {
-	l := v.Size()
+func (v TypedVector) AtRef(i int, ref *Reference) error {
+	l, err := v.Size()
+	if err != nil {
+		return err
+	}
 	if i >= l {
-		return
+		return ErrNotFound
 	}
 	ref.data_ = v.buf
 	ref.offset = v.offset + i*int(v.byteWidth)
 	ref.parentWidth = v.byteWidth
 	ref.byteWidth = 1
 	ref.type_ = v.type_
+	return nil
 }
 
-func (v TypedVector) At(i int) Reference {
-	l := v.Size()
-	if i >= l {
+func (v TypedVector) AtOrNull(i int) Reference {
+	vec, err := v.At(i)
+	if err != nil {
 		return NullReference
+	}
+	return vec
+}
+
+func (v TypedVector) At(i int) (Reference, error) {
+	l, err := v.Size()
+	if err != nil {
+		return Reference{}, err
+	}
+	if i >= l {
+		return Reference{}, ErrNotFound
 	}
 	return Reference{
 		data_:       v.buf,
@@ -362,7 +431,7 @@ func (v TypedVector) At(i int) Reference {
 		parentWidth: v.byteWidth,
 		byteWidth:   1,
 		type_:       v.type_,
-	}
+	}, nil
 }
 
 func EmptyTypedVector() TypedVector {
@@ -384,32 +453,42 @@ type FixedTypedVector struct {
 	len_  uint8
 }
 
-func (v FixedTypedVector) AtRef(i int, ref *Reference) {
+func (v FixedTypedVector) AtRef(i int, ref *Reference) error {
 	if i >= int(v.len_) {
-		return
+		return ErrOutOfRange
 	}
 	ref.data_ = v.buf
 	ref.offset = v.offset + i*int(v.byteWidth)
 	ref.parentWidth = v.byteWidth
 	ref.byteWidth = 1
 	ref.type_ = v.type_
+	return nil
 }
 
-func (v FixedTypedVector) Size() int {
-	return int(v.len_)
+func (v FixedTypedVector) Size() (int, error) {
+	return int(v.len_), nil
 }
 
-func (v FixedTypedVector) At(i int) Reference {
-	if i >= int(v.len_) {
+func (v FixedTypedVector) AtOrNull(i int) Reference {
+	vec, err := v.At(i)
+	if err != nil {
 		return NullReference
 	}
-	return Reference{
+	return vec
+}
+
+func (v FixedTypedVector) At(i int) (Reference, error) {
+	if i >= int(v.len_) {
+		return Reference{}, ErrOutOfRange
+	}
+	r := Reference{
 		data_:       v.buf,
 		offset:      v.offset + i*int(v.byteWidth),
 		parentWidth: v.byteWidth,
 		byteWidth:   1,
 		type_:       v.type_,
 	}
+	return r, r.CheckBoundary()
 }
 
 func EmptyFixedTypedVector() FixedTypedVector {
@@ -482,7 +561,10 @@ func (m Map) Get(key string) (Reference, error) {
 	if err != nil {
 		return Reference{}, err
 	}
-	keysSize := keys.Size()
+	keysSize, err := keys.Size()
+	if err != nil {
+		return Reference{}, err
+	}
 	keyBytes := *(*[]byte)(unsafe.Pointer(&key))
 	if keysSize > LookupBinarySearchThreshold {
 		// binary search
@@ -500,13 +582,17 @@ func (m Map) Get(key string) (Reference, error) {
 		}
 		if foundIdx < keysSize { // found
 			var ref Reference
-			keys.AtRef(foundIdx, &ref)
+			if err := keys.AtRef(foundIdx, &ref); err != nil {
+				return Reference{}, err
+			}
 			sv, err := ref.asStringKey()
 			if err != nil {
 				return Reference{}, err
 			}
 			if sv == key {
-				m.Values().AtRef(foundIdx, &ref)
+				if err := m.Values().AtRef(foundIdx, &ref); err != nil {
+					return Reference{}, err
+				}
 				return ref, nil
 			} else {
 				return Reference{}, ErrNotFound
@@ -517,10 +603,16 @@ func (m Map) Get(key string) (Reference, error) {
 	} else {
 		// linear search
 		for i := 0; i < keysSize; i++ {
-			candidate := keys.At(i)
+			candidate, err := keys.At(i)
+			if err != nil {
+				return Reference{}, err
+			}
 			sv := candidate.AsKey().StringValue()
 			if sv == key {
-				v := m.Values().At(i)
+				v, err := m.Values().At(i)
+				if err != nil {
+					return Reference{}, err
+				}
 				return v, nil
 			}
 		}

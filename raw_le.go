@@ -17,7 +17,7 @@ type Raw []byte
 
 func (b Raw) ReadUInt64(offset int, byteWidth uint8) (uint64, error) {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return 0, ErrOffsetOutOfRange
+		return 0, ErrOutOfRange
 	}
 	if byteWidth < 4 {
 		if byteWidth < 2 {
@@ -36,7 +36,7 @@ func (b Raw) ReadUInt64(offset int, byteWidth uint8) (uint64, error) {
 
 func (b Raw) ReadInt64(offset int, byteWidth uint8) (int64, error) {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return 0, ErrOffsetOutOfRange
+		return 0, ErrOutOfRange
 	}
 	if byteWidth < 4 {
 		if byteWidth < 2 {
@@ -55,7 +55,7 @@ func (b Raw) ReadInt64(offset int, byteWidth uint8) (int64, error) {
 
 func (b Raw) ReadDouble(offset int, byteWidth uint8) (float64, error) {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return 0.0, ErrOffsetOutOfRange
+		return 0.0, ErrOutOfRange
 	}
 	if byteWidth < 4 {
 		if byteWidth < 2 {
@@ -74,7 +74,7 @@ func (b Raw) ReadDouble(offset int, byteWidth uint8) (float64, error) {
 
 func (b Raw) WriteInt64(offset int, byteWidth uint8, value int64) error {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return ErrOffsetOutOfRange
+		return ErrOutOfRange
 	}
 	valueWidth := WidthI(value)
 	fits := (1 << valueWidth) <= byteWidth
@@ -95,7 +95,7 @@ func (b Raw) WriteInt64(offset int, byteWidth uint8, value int64) error {
 
 func (b Raw) WriteUInt64(offset int, byteWidth uint8, value uint64) error {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return ErrOffsetOutOfRange
+		return ErrOutOfRange
 	}
 	valueWidth := WidthU(value)
 	fits := (1 << valueWidth) <= byteWidth
@@ -116,7 +116,7 @@ func (b Raw) WriteUInt64(offset int, byteWidth uint8, value uint64) error {
 
 func (b Raw) WriteFloat(offset int, byteWidth uint8, value float64) error {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return ErrOffsetOutOfRange
+		return ErrOutOfRange
 	}
 	valueWidth := WidthF(value)
 	fits := (1 << valueWidth) <= byteWidth
@@ -133,31 +133,47 @@ func (b Raw) WriteFloat(offset int, byteWidth uint8, value float64) error {
 
 func (b Raw) Indirect(offset int, byteWidth uint8) (int, error) {
 	if len(b) <= offset+int(byteWidth) || offset < 0 {
-		return 0, ErrOffsetOutOfRange
+		return 0, ErrOutOfRange
 	}
+	var ind int
 	if byteWidth < 4 {
 		if byteWidth < 2 {
-			return offset - int(*(*uint8)(unsafe.Pointer(&b[offset]))), nil
+			ind = offset - int(*(*uint8)(unsafe.Pointer(&b[offset])))
 		} else {
-			return offset - int(*(*uint16)(unsafe.Pointer(&b[offset]))), nil
+			ind = offset - int(*(*uint16)(unsafe.Pointer(&b[offset])))
 		}
 	} else {
 		if byteWidth < 8 {
-			return offset - int(*(*uint32)(unsafe.Pointer(&b[offset]))), nil
+			ind = offset - int(*(*uint32)(unsafe.Pointer(&b[offset])))
 		} else {
-			return offset - int(*(*uint64)(unsafe.Pointer(&b[offset]))), nil
+			ind = offset - int(*(*uint64)(unsafe.Pointer(&b[offset])))
 		}
 	}
+	if ind < 0 || len(b) <= ind {
+		return 0, ErrOutOfRange
+	}
+	return ind, nil
 }
 
 func (b Raw) Validate() error {
-	root := b.Root()
+	root, err := b.Root()
+	if err != nil {
+		return err
+	}
 	return root.Validate()
 }
 
-func (b Raw) Root() Reference {
-	if len(b) <= 2 {
+func (b Raw) RootOrNull() Reference {
+	v, err := b.Root()
+	if err != nil {
 		return NullReference
+	}
+	return v
+}
+
+func (b Raw) Root() (Reference, error) {
+	if len(b) <= 2 {
+		return Reference{}, ErrInvalidData
 	}
 	byteWidth := b[len(b)-1]
 	packedType := b[len(b)-2]

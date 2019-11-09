@@ -32,6 +32,13 @@ type Reference struct {
 	type_       Type
 }
 
+func (r Reference) CheckBoundary() error {
+	if r.offset < 0 || len(r.data_) <= r.offset {
+		return ErrOutOfRange
+	}
+	return nil
+}
+
 func (r Reference) String() string {
 	var sb bytes.Buffer
 	if err := r.WriteAsJson(&sb); err != nil {
@@ -40,22 +47,26 @@ func (r Reference) String() string {
 	return sb.String()
 }
 
-func (r Reference) writeJsonVector(l int, vec interface{ At(int) Reference }, w io.Writer) (err error) {
+func (r Reference) writeJsonVector(l int, vec AnyVector, w io.Writer) (err error) {
 	if _, err = fmt.Fprintf(w, "["); err != nil {
 		return
 	}
 	for i := 0; i < l; i++ {
-		if err = vec.At(i).WriteAsJson(w); err != nil {
-			return
+		item, err := vec.At(i)
+		if err != nil {
+			return err
+		}
+		if err := item.WriteAsJson(w); err != nil {
+			return err
 		}
 		if i != l-1 {
-			if _, err = fmt.Fprintf(w, ","); err != nil {
-				return
+			if _, err := fmt.Fprintf(w, ","); err != nil {
+				return err
 			}
 		}
 	}
-	if _, err = fmt.Fprintf(w, "]"); err != nil {
-		return
+	if _, err := fmt.Fprintf(w, "]"); err != nil {
+		return err
 	}
 	return
 }
@@ -77,7 +88,7 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 		}
 		_, err = fmt.Fprintf(w, "\"%s\"", k)
 	case FBTString:
-		_, err = fmt.Fprintf(w, "\"%s\"", r.AsStringRef().StringValue())
+		_, err = fmt.Fprintf(w, "\"%s\"", r.AsStringRef().StringValueOrEmpty())
 	case FBTMap:
 		m := r.AsMap()
 		var keys TypedVector
@@ -86,24 +97,46 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 			return
 		}
 		values := m.Values()
-		for i := 0; i < keys.Size(); i++ {
-			k := keys.At(i)
-			v := values.At(i)
-			if err = k.WriteAsJson(w); err != nil {
-				return
+		sz, err := keys.Size()
+		if err != nil {
+			return err
+		}
+		for i := 0; i < sz; i++ {
+			k, err := keys.At(i)
+			if err != nil {
+				return err
 			}
-			if _, err = fmt.Fprintf(w, ":"); err != nil {
-				return
+			v, err := values.At(i)
+			if err != nil {
+				return err
 			}
-			if err = v.WriteAsJson(w); err != nil {
-				return
+			if err := k.WriteAsJson(w); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, ":"); err != nil {
+				return err
+			}
+			if err := v.WriteAsJson(w); err != nil {
+				return err
 			}
 		}
 	case FBTVector:
 		vec := r.AsVector()
-		err = r.writeJsonVector(vec.Size(), vec, w)
+		sz, err := vec.Size()
+		if err != nil {
+			return err
+		}
+		err = r.writeJsonVector(sz, vec, w)
 	case FBTBlob:
-		_, err = fmt.Fprintf(w, "\"%s\"", base64.StdEncoding.EncodeToString(r.AsBlob().Data()))
+		blob, err := r.Blob()
+		if err != nil {
+			return err
+		}
+		d, err := blob.Data()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "\"%s\"", base64.StdEncoding.EncodeToString(d))
 	case FBTBool:
 		if r.AsBool() {
 			_, err = fmt.Fprintf(w, "true")
@@ -113,7 +146,11 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 	default:
 		if r.IsTypedVector() {
 			vec := r.AsTypedVector()
-			err = r.writeJsonVector(vec.Size(), vec, w)
+			sz, err := vec.Size()
+			if err != nil {
+				return err
+			}
+			err = r.writeJsonVector(sz, vec, w)
 		} else if r.IsFixedTypedVector() {
 			vec := r.AsFixedTypedVector()
 			err = r.writeJsonVector(int(vec.len_), vec, w)
@@ -124,21 +161,28 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 	return
 }
 
-func setReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8, ref *Reference) {
+func setReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8, ref *Reference) error {
+	bw := 1 << (packedType & 3)
+	if offset < 0 || len(buf) <= offset+bw {
+		return ErrOutOfRange
+	}
 	ref.data_ = buf
 	ref.offset = offset
 	ref.parentWidth = parentWidth
-	ref.byteWidth = 1 << (packedType & 3)
+	ref.byteWidth = uint8(bw)
 	ref.type_ = Type(packedType >> 2)
+	return nil
 }
-func NewReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8) Reference {
-	return Reference{
+
+func NewReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8) (Reference, error) {
+	r := Reference{
 		data_:       buf,
 		offset:      offset,
 		parentWidth: parentWidth,
 		byteWidth:   1 << (packedType & 3),
 		type_:       Type(packedType >> 2),
 	}
+	return r, r.CheckBoundary()
 }
 
 func (r Reference) IsNull() bool {
@@ -279,14 +323,25 @@ func (r Reference) Int64() (int64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString(r.data_[ind:])
+			if err != nil {
+				return 0, err
+			}
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				panic("TODO")
+				return 0, err
 			}
 			return i, nil
 		case FBTVector:
-			return int64(r.AsVector().Size()), nil
+			vec, err := r.Vector()
+			if err != nil {
+				return 0, err
+			}
+			sz, err := vec.Size()
+			if err != nil {
+				return 0, err
+			}
+			return int64(sz), nil
 		case FBTBool:
 			return r.data_.ReadInt64(r.offset, r.parentWidth)
 		default:
@@ -358,18 +413,25 @@ func (r Reference) UInt64() (uint64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString(r.data_[ind:])
+			if err != nil {
+				return 0, err
+			}
 			i, err := strconv.ParseUint(s, 10, 64)
 			if err != nil {
 				return 0, err
 			}
 			return i, nil
 		case FBTVector:
-			v, err := r.Vector()
+			vec, err := r.Vector()
 			if err != nil {
 				return 0, err
 			}
-			return uint64(v.Size()), nil
+			sz, err := vec.Size()
+			if err != nil {
+				return 0, err
+			}
+			return uint64(sz), nil
 		case FBTBool:
 			return r.data_.ReadUInt64(r.offset, r.parentWidth)
 		default:
@@ -432,18 +494,25 @@ func (r Reference) Float64() (float64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString(r.data_[ind:])
+			if err != nil {
+				return 0, err
+			}
 			i, err := strconv.ParseFloat(s, 64)
 			if err != nil {
 				return 0, err
 			}
 			return i, nil
 		case FBTVector:
-			v, err := r.Vector()
+			vec, err := r.Vector()
 			if err != nil {
 				return 0, err
 			}
-			return float64(v.Size()), nil
+			sz, err := vec.Size()
+			if err != nil {
+				return 0, err
+			}
+			return float64(sz), nil
 		case FBTBool:
 			v, err := r.data_.ReadUInt64(r.offset, r.parentWidth)
 			if err != nil {
@@ -739,7 +808,7 @@ func (r Reference) MutateString(s string) bool {
 	// This is very strict, could allow shorter strings, but that creates
 	// garbage.
 	// ... flexbuffers.h says so
-	if len(s) != r.AsStringRef().Size() {
+	if len(s) != r.AsStringRef().SizeOrZero() {
 		return false
 	}
 	data := *(*[]byte)(unsafe.Pointer(&s))
@@ -780,12 +849,20 @@ func (r Reference) Validate() (err error) {
 			return err
 		}
 		var v Reference
-		for i := 0; i < m.Size(); i++ {
+		sz, err := m.Size()
+		if err != nil {
+			return err
+		}
+		for i := 0; i < sz; i++ {
 			m.AtRef(i, &v)
 			if err := v.Validate(); err != nil {
 				return err
 			}
-			if err := keys.At(i).Validate(); err != nil {
+			item, err := keys.At(i)
+			if err != nil {
+				return err
+			}
+			if err := item.Validate(); err != nil {
 				return err
 			}
 		}
@@ -795,8 +872,14 @@ func (r Reference) Validate() (err error) {
 			return err
 		}
 		var v Reference
-		for i := 0; i < vec.Size(); i++ {
-			vec.AtRef(i, &v)
+		sz, err := vec.Size()
+		if err != nil {
+			return err
+		}
+		for i := 0; i < sz; i++ {
+			if err := vec.AtRef(i, &v); err != nil {
+				return err
+			}
 			if err := v.Validate(); err != nil {
 				return err
 			}
@@ -805,8 +888,14 @@ func (r Reference) Validate() (err error) {
 		anyVec, err := r.AnyVector()
 		if err == nil {
 			var v Reference
-			for i := 0; i < anyVec.Size(); i++ {
-				anyVec.AtRef(i, &v)
+			sz, err := anyVec.Size()
+			if err != nil {
+				return err
+			}
+			for i := 0; i < sz; i++ {
+				if err := anyVec.AtRef(i, &v); err != nil {
+					return err
+				}
 				if err := v.Validate(); err != nil {
 					return err
 				}

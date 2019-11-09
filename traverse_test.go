@@ -41,9 +41,9 @@ func TestTraverser_Lookup(t *testing.T) {
 	root := b.Buffer()
 	a.Equal(int64(10), mustLookup(root, "a", "a").AsInt64())
 	a.Equal(int64(40), mustLookup(root, "b", "d").AsInt64())
-	a.Equal("foo", mustLookup(root, "b", "e").AsStringRef().StringValue())
+	a.Equal("foo", mustLookup(root, "b", "e").AsStringRef().StringValueOrEmpty())
 	a.Equal(int64(123), mustLookup(root, "c").AsInt64())
-	a.Equal("bar", mustLookup(root, "d", "a", "b").AsStringRef().StringValue())
+	a.Equal("bar", mustLookup(root, "d", "a", "b").AsStringRef().StringValueOrEmpty())
 
 	// empty data
 	_, err := root.Lookup("foo")

@@ -12,7 +12,8 @@ import (
 var (
 	ErrSizeOverflow      = errors.New("overflow")
 	ErrOddSizeMapContent = errors.New("map expecting even items, but got odd items")
-	ErrOffsetOutOfRange  = errors.New("offset out of range")
+	ErrOutOfRange        = errors.New("out of range, might be broken data")
+	ErrInvalidData       = errors.New("invalid data")
 	ErrNoNullByte        = errors.New("no null terminator found")
 )
 
@@ -328,7 +329,7 @@ func (b *Builder) EndMap(start int) (int, error) {
 func (b *Builder) WriteOffset(o int, byteWidth int) error {
 	reloff := len(b.buf) - o
 	if byteWidth != 8 && reloff >= 1<<(byteWidth*8) {
-		return ErrOffsetOutOfRange
+		return ErrOutOfRange
 	}
 	b.WriteUInt(uint64(reloff), byteWidth)
 	return nil
