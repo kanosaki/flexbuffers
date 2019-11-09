@@ -173,21 +173,23 @@ func (s Sized) SizeOrZero() int {
 }
 
 func (s Sized) Size() (int, error) {
-	if len(s.buf) <= s.offset || s.offset-int(s.byteWidth) < 0 {
+
+	sizeOffset := s.offset - int(s.byteWidth)
+	if sizeOffset < 0 || len(s.buf) <= sizeOffset {
 		return 0, ErrOutOfRange
 	}
 	var ret int
 	if s.byteWidth < 4 {
 		if s.byteWidth < 2 {
-			ret = int(*(*uint8)(unsafe.Pointer(&s.buf[s.offset-1])))
+			ret = int(*(*uint8)(unsafe.Pointer(&s.buf[sizeOffset])))
 		} else {
-			ret = int(*(*uint16)(unsafe.Pointer(&s.buf[s.offset-2])))
+			ret = int(*(*uint16)(unsafe.Pointer(&s.buf[sizeOffset])))
 		}
 	} else {
 		if s.byteWidth < 8 {
-			ret = int(*(*uint32)(unsafe.Pointer(&s.buf[s.offset-4])))
+			ret = int(*(*uint32)(unsafe.Pointer(&s.buf[sizeOffset])))
 		} else {
-			ret = int(*(*uint64)(unsafe.Pointer(&s.buf[s.offset-8])))
+			ret = int(*(*uint64)(unsafe.Pointer(&s.buf[sizeOffset])))
 		}
 	}
 	if ret < 0 {
@@ -248,7 +250,7 @@ func (s String) UnsafeStringValue() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(s.buf) <= s.offset || s.offset < 0 {
+	if len(s.buf) <= s.offset+size || s.offset < 0 {
 		return "", ErrOutOfRange
 	}
 	var sh reflect.StringHeader
@@ -326,7 +328,7 @@ func (v Vector) AtRef(i int, ref *Reference) error {
 		return ErrNotFound
 	}
 	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
-	if len(v.buf) <= packedTypeOffset {
+	if packedTypeOffset < 0 || len(v.buf) <= packedTypeOffset {
 		return ErrOutOfRange
 	}
 	packedType := v.buf[packedTypeOffset]

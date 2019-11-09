@@ -823,7 +823,7 @@ func (r Reference) Validate() (err error) {
 		_, err = r.Int64()
 	case FBTUint, FBTIndirectUInt:
 		_, err = r.UInt64()
-	case FBTFloat:
+	case FBTFloat, FBTIndirectFloat:
 		_, err = r.Float64()
 	case FBTKey:
 		k, err := r.Key()
@@ -838,7 +838,9 @@ func (r Reference) Validate() (err error) {
 		if err != nil {
 			return err
 		}
-		s.StringValue()
+		if _, err := s.StringValue(); err != nil {
+			return err
+		}
 	case FBTMap:
 		m, err := r.Map()
 		if err != nil {
@@ -848,21 +850,23 @@ func (r Reference) Validate() (err error) {
 		if err != nil {
 			return err
 		}
-		var v Reference
+		var key Reference
+		var value Reference
 		sz, err := m.Size()
 		if err != nil {
 			return err
 		}
 		for i := 0; i < sz; i++ {
-			m.AtRef(i, &v)
-			if err := v.Validate(); err != nil {
+			if err := keys.AtRef(i, &key); err != nil {
 				return err
 			}
-			item, err := keys.At(i)
-			if err != nil {
+			if err := key.Validate(); err != nil {
 				return err
 			}
-			if err := item.Validate(); err != nil {
+			if err := m.AtRef(i, &value); err != nil {
+				return err
+			}
+			if err := value.Validate(); err != nil {
 				return err
 			}
 		}

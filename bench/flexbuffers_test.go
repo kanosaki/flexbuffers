@@ -37,9 +37,9 @@ func BenchmarkFlexbuffersTraverseByReference(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		root := bld.Buffer().Root()
+		root := bld.Buffer().RootOrNull()
 		leaf := root.AsMap().GetOrNull("g").AsMap().GetOrNull("f").AsMap().GetOrNull("e").AsMap().GetOrNull("d").AsMap().GetOrNull("c").AsMap()
-		if leaf.Size() != 0 {
+		if leaf.SizeOrZero() != 0 {
 			b.Fatal("assertion error")
 		}
 	}
@@ -55,7 +55,7 @@ func BenchmarkFlexbuffersTraverseByTraverser(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		root := bld.Buffer()
 		tv := root.LookupOrNull("g", "f", "e", "d", "c")
-		if tv.AsMap().Size() != 0 {
+		if tv.AsMap().SizeOrZero() != 0 {
 			b.Fatal("assertion error")
 		}
 	}
