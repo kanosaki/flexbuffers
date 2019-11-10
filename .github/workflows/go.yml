@@ -20,5 +20,5 @@ jobs:
       run: |
         go get -v -t -d ./...
 
-    - name: Bench
-      run: go test -v .
+    - name: Test (unsafe)
+      run: go test -tags unsafe -v .
