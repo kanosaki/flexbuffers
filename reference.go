@@ -76,11 +76,23 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 	case FBTNull:
 		_, err = fmt.Fprintf(w, "null")
 	case FBTInt, FBTIndirectInt:
-		_, err = fmt.Fprintf(w, "%d", r.AsInt64())
+		i, err := r.Int64()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "%d", i)
 	case FBTUint, FBTIndirectUInt:
-		_, err = fmt.Fprintf(w, "%d", r.AsUInt64())
+		i, err := r.UInt64()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "%d", i)
 	case FBTFloat, FBTIndirectFloat:
-		_, err = fmt.Fprintf(w, "%f", r.AsFloat64())
+		f, err := r.Float64()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "%f", f)
 	case FBTKey:
 		k, err := r.asStringKey()
 		if err != nil {
@@ -88,9 +100,22 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 		}
 		_, err = fmt.Fprintf(w, "\"%s\"", k)
 	case FBTString:
-		_, err = fmt.Fprintf(w, "\"%s\"", r.AsStringRef().StringValueOrEmpty())
+		sRef, err := r.StringRef()
+		if err != nil {
+			return err
+		}
+		unsafeStr, err := sRef.UnsafeStringValue()
+		if err != nil {
+			return err
+		}
+		replacer := strings.NewReplacer("\"", "\\\"", "\\", "\\\\")
+		s := replacer.Replace(unsafeStr)
+		_, err = fmt.Fprintf(w, "\"%s\"", s)
 	case FBTMap:
-		m := r.AsMap()
+		m, err := r.Map()
+		if err != nil {
+			return err
+		}
 		var keys TypedVector
 		keys, err = m.Keys()
 		if err != nil {
@@ -121,7 +146,10 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 			}
 		}
 	case FBTVector:
-		vec := r.AsVector()
+		vec, err := r.Vector()
+		if err != nil {
+			return err
+		}
 		sz, err := vec.Size()
 		if err != nil {
 			return err
@@ -138,21 +166,31 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 		}
 		_, err = fmt.Fprintf(w, "\"%s\"", base64.StdEncoding.EncodeToString(d))
 	case FBTBool:
-		if r.AsBool() {
+		b, err := r.Bool()
+		if err != nil {
+			return err
+		}
+		if b {
 			_, err = fmt.Fprintf(w, "true")
 		} else {
 			_, err = fmt.Fprintf(w, "false")
 		}
 	default:
 		if r.IsTypedVector() {
-			vec := r.AsTypedVector()
+			vec, err := r.TypedVector()
+			if err != nil {
+				return err
+			}
 			sz, err := vec.Size()
 			if err != nil {
 				return err
 			}
 			err = r.writeJsonVector(sz, vec, w)
 		} else if r.IsFixedTypedVector() {
-			vec := r.AsFixedTypedVector()
+			vec, err := r.FixedTypedVector()
+			if err != nil {
+				return err
+			}
 			err = r.writeJsonVector(int(vec.len_), vec, w)
 		} else {
 			return fmt.Errorf("unable to convert to json: type=%v", r.type_)
@@ -812,6 +850,9 @@ func (r Reference) MutateString(s string) bool {
 		return false
 	}
 	data := *(*[]byte)(unsafe.Pointer(&s))
+	if r.offset < 0 || len(r.data_) <= r.offset || len(r.data_) <= r.offset+len(data) {
+		return false
+	}
 	copy(r.data_[r.offset:], data)
 	r.data_[r.offset+len(data)] = 0 // NUL terminator
 	return true

@@ -1,30 +1,12 @@
 
 #include "flatbuffers/flexbuffers.h"
-#include <fstream>
+#include "util.h"
 #include <iostream>
 #include <sys/stat.h>
 #include <utility>
 #include <vector>
 
 using namespace flexbuffers;
-
-std::string output_dir;
-
-void gen(std::string label, std::function<void(Builder &)> fn) {
-  Builder b;
-  fn(b);
-  std::cout << "Writing: " << label << std::endl;
-  b.Finish();
-  auto p = output_dir + "/" + label;
-  std::fstream out(p, std::fstream::out | std::fstream::binary);
-  if (!out) {
-    throw std::runtime_error("failed to open file: " +
-                             std::string(strerror(errno)));
-  }
-  auto buf = reinterpret_cast<const char *>(b.GetBuffer().data());
-  out.write(buf, b.GetSize());
-  out.close();
-}
 
 void generate_files() {
   gen("single_int_1.flexbuf", [&](Builder &b) { b.Int(1); });
@@ -86,6 +68,12 @@ void generate_files() {
         b.Add(65546);
       });
       b.Int("int", 123);
+    });
+  });
+  gen("nested_vector_map.flexbuf", [&](Builder &b) {
+    b.Vector([&]() {
+      b.Map([&]() { b.String("a", "1"); });
+      b.Map([&]() { b.Int("b", 1234); });
     });
   });
   gen("primitive_corners.flexbuf", [&](Builder &b) {
