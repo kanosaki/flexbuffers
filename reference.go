@@ -119,7 +119,7 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 		var keys TypedVector
 		keys, err = m.Keys()
 		if err != nil {
-			return
+			return err
 		}
 		values := m.Values()
 		sz, err := keys.Size()
