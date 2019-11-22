@@ -178,7 +178,7 @@ func (b Raw) Root() (Reference, error) {
 	byteWidth := b[len(b)-1]
 	packedType := b[len(b)-2]
 	rootOffset := len(b) - 2 - int(byteWidth)
-	return NewReferenceFromPackedType(b, rootOffset, byteWidth, packedType)
+	return NewReferenceFromPackedType(&b, rootOffset, byteWidth, packedType)
 }
 
 func (b Raw) InitTraverser(tv *Traverser) {
@@ -186,7 +186,7 @@ func (b Raw) InitTraverser(tv *Traverser) {
 	packedType := b[len(b)-2]
 	rootOffset := len(b) - 2 - int(byteWidth)
 	*tv = Traverser{
-		buf:         b,
+		buf:         &b,
 		offset:      rootOffset,
 		typ:         Type(packedType >> 2),
 		parentWidth: int(byteWidth),
