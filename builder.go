@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/cespare/xxhash"
 )
@@ -29,6 +30,11 @@ const (
 	BuilderFlagShareAll            BuilderFlag = 7
 )
 
+type offsetAndLen struct {
+	offset uint64
+	size   int
+}
+
 type Builder struct {
 	buf              []byte
 	stack            []value
@@ -37,13 +43,20 @@ type Builder struct {
 	forceMinBitWidth BitWidth
 	err              error
 
-	keyOffsetMap        map[uint64]uint64
-	stringOffsetMap     map[uint64]uint64
-	keyVectorsOffsetMap map[uint64]uint64
+	keyOffsetMap        map[uint64]offsetAndLen
+	stringOffsetMap     map[uint64]offsetAndLen
+	keyVectorsOffsetMap map[uint64]value
 }
 
 func NewBuilder() *Builder {
 	b := new(Builder)
+	b.Clear()
+	return b
+}
+
+func NewBuilderWithFlags(flags BuilderFlag) *Builder {
+	b := new(Builder)
+	b.flags = flags
 	b.Clear()
 	return b
 }
@@ -65,17 +78,17 @@ func (b *Builder) Clear() {
 	b.finished = false
 	b.forceMinBitWidth = BitWidth8
 	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
-		b.keyOffsetMap = make(map[uint64]uint64)
+		b.keyOffsetMap = make(map[uint64]offsetAndLen)
 	} else {
 		b.keyOffsetMap = nil
 	}
 	if b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings {
-		b.stringOffsetMap = make(map[uint64]uint64)
+		b.stringOffsetMap = make(map[uint64]offsetAndLen)
 	} else {
 		b.stringOffsetMap = nil
 	}
 	if b.flags&BuilderFlagShareKeyVectors == BuilderFlagShareKeyVectors {
-		b.keyVectorsOffsetMap = make(map[uint64]uint64)
+		b.keyVectorsOffsetMap = make(map[uint64]value)
 	} else {
 		b.keyVectorsOffsetMap = nil
 	}
@@ -104,20 +117,29 @@ func (b *Builder) WriteBytes(data []byte) {
 
 func (b *Builder) Key(key []byte) uint64 {
 	sloc := uint64(len(b.buf))
-	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
-		hash := xxhash.Sum64(key)
-		if prevSloc, ok := b.keyOffsetMap[hash]; ok {
-			prevKey := readCStringBytes(b.buf, int(prevSloc))
-			if bytes.Compare(key, prevKey) == 0 {
-				b.stack = append(b.stack, newValueUInt(prevSloc, FBTKey, BitWidth8))
-				return prevSloc
-			}
+	var conflict bool
+	var hash uint64
+	share := b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys
+	if share {
+		hash = xxhash.Sum64(key)
+		prev, ok := b.keyOffsetMap[hash]
+		if ok && bytes.Compare(key, b.buf[prev.offset:int(prev.offset)+prev.size]) == 0 {
+			sloc = prev.offset
+			b.stack = append(b.stack, newValueUInt(prev.offset, FBTKey, BitWidth8))
+			return prev.offset
 		}
-		b.keyOffsetMap[hash] = sloc
+		// not found or found but different content (hash conflict)
+		conflict = ok
 	}
 	b.WriteBytes(key)
 	b.buf = append(b.buf, 0) // terminate bytes
 	b.stack = append(b.stack, newValueUInt(sloc, FBTKey, BitWidth8))
+	if share && !conflict {
+		b.keyOffsetMap[hash] = offsetAndLen{
+			offset: sloc,
+			size:   len(key),
+		}
+	}
 	return sloc
 }
 
@@ -204,10 +226,27 @@ func (b *Builder) IndirectFloat64Field(key []byte, f float64) {
 }
 
 func (b *Builder) StringValue(s string) int {
-	//resetTo := b.buf.Len()
-	sloc := b.createBlob(stringToBytes(s), 1, FBTString)
-	if b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings {
-		// TODO
+	var hash uint64
+	var conflict bool
+	share := b.flags&BuilderFlagShareStrings == BuilderFlagShareStrings
+	data := stringToBytes(s)
+	if share {
+		hash = xxhash.Sum64String(s)
+		prevLoc, ok := b.stringOffsetMap[hash]
+		if ok && bytes.Compare(data, b.buf[prevLoc.offset:int(prevLoc.offset)+prevLoc.size]) == 0 {
+			bitWidth := WidthU(uint64(len(data)))
+			b.stack = append(b.stack, newValueUInt(prevLoc.offset, FBTString, bitWidth))
+			return int(prevLoc.offset)
+		}
+		// not found or found but different content (hash conflict)
+		conflict = ok
+	}
+	sloc := b.createBlob(data, 1, FBTString)
+	if share && !conflict {
+		b.stringOffsetMap[hash] = offsetAndLen{
+			offset: uint64(sloc),
+			size:   len(data),
+		}
 	}
 	return sloc
 }
@@ -302,6 +341,26 @@ func (b *Builder) VectorField(key []byte, typed, fixed bool, fn func(bld *Builde
 	return b.Vector(typed, fixed, fn)
 }
 
+type keysValueSlice struct {
+	b      *Builder
+	values []value
+}
+
+func (k *keysValueSlice) Len() int {
+	return len(k.values) / 2
+}
+
+func (k *keysValueSlice) Less(i, j int) bool {
+	iKey := readCStringBytes(k.b.buf, int(k.values[2*i].d))
+	jKey := readCStringBytes(k.b.buf, int(k.values[2*j].d))
+	return bytes.Compare(iKey, jKey) <= 0
+}
+
+func (k *keysValueSlice) Swap(i, j int) {
+	k.values[2*i], k.values[2*j] = k.values[2*j], k.values[2*i]
+	k.values[2*i+1], k.values[2*j+1] = k.values[2*j+1], k.values[2*i+1]
+}
+
 func (b *Builder) EndMap(start int) (int, error) {
 	l := len(b.stack) - start
 	if l&1 > 0 {
@@ -313,11 +372,35 @@ func (b *Builder) EndMap(start int) (int, error) {
 			return 0, fmt.Errorf("odd elemnt of map must be Key")
 		}
 	}
-	// TODO: implement sorting
-	keys, err := b.createVector(start, l, 2, true, false, nil)
+	sortingSlice := keysValueSlice{
+		b:      b,
+		values: b.stack[start:],
+	}
+	sort.Sort(&sortingSlice)
+
+	share := b.flags&BuilderFlagShareKeyVectors == BuilderFlagShareKeyVectors
+	var keys value
+	var err error
+	var hash uint64
+	if share {
+		h := xxhash.New()
+		for key := start; key < len(b.stack); key += 2 {
+			_, _ = h.Write(readCStringBytes(b.buf, int(b.stack[key].d)))
+		}
+		hash = h.Sum64()
+		if prev, ok := b.keyVectorsOffsetMap[hash]; ok {
+			keys = prev
+			goto keyOk
+		}
+	}
+	keys, err = b.createVector(start, l, 2, true, false, nil)
 	if err != nil {
 		return 0, err
 	}
+	if share {
+		b.keyVectorsOffsetMap[hash] = keys
+	}
+keyOk:
 	vec, err := b.createVector(start+1, l, 2, false, false, &keys)
 	if err != nil {
 		return 0, err

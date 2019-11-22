@@ -14,6 +14,10 @@ const (
 
 type BitWidth int
 
+func (b BitWidth) ByteWidth() uint8 {
+	return 1 << b
+}
+
 const (
 	BitWidth8 BitWidth = iota
 	BitWidth16

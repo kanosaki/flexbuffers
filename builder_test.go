@@ -10,9 +10,10 @@ import (
 
 func TestBuildAndParse(t *testing.T) {
 	cases := []struct {
-		name     string
-		buildFn  func(b *Builder)
-		assertFn func(a *assert.Assertions, r Reference)
+		name         string
+		builderFlags BuilderFlag
+		buildFn      func(b *Builder)
+		assertFn     func(a *assert.Assertions, r Reference)
 	}{
 		{
 			name: "simple_int16",
@@ -152,6 +153,25 @@ func TestBuildAndParse(t *testing.T) {
 			},
 		},
 		{
+			name: "unsorted_map",
+			buildFn: func(b *Builder) {
+				m := b.StartMap()
+				b.IntField([]byte("b"), 20)
+				b.IntField([]byte("c"), 30)
+				b.IntField([]byte("a"), 10)
+				b.EndMap(m)
+			},
+			assertFn: func(a *assert.Assertions, r Reference) {
+				m := r.AsMap()
+				a.Equal(int64(10), m.GetOrNull("a").AsInt64())
+				a.Equal(int64(20), m.GetOrNull("b").AsInt64())
+				a.Equal(int64(30), m.GetOrNull("c").AsInt64())
+				a.Equal(int64(10), m.AtOrNull(0).AsInt64())
+				a.Equal(int64(20), m.AtOrNull(1).AsInt64())
+				a.Equal(int64(30), m.AtOrNull(2).AsInt64())
+			},
+		},
+		{
 			name: "flat_polymorphic_map",
 			buildFn: func(b *Builder) {
 				m := b.StartMap()
@@ -212,11 +232,46 @@ func TestBuildAndParse(t *testing.T) {
 						StringValueOrEmpty())
 			},
 		},
+		{
+			name:         "shared_key",
+			builderFlags: BuilderFlagShareKeys,
+			buildFn: func(b *Builder) {
+				b.Vector(false, false, func(b *Builder) {
+					b.Key([]byte("foo"))
+					b.Key([]byte("foo"))
+				})
+			},
+			assertFn: func(a *assert.Assertions, r Reference) {
+				a.Equal("foo", r.AsVector().AtOrNull(0).AsKey().StringValue())
+			},
+		},
+		{
+			name:         "shared_key_and_key_vector",
+			builderFlags: BuilderFlagShareKeys | BuilderFlagShareKeyVectors,
+			buildFn: func(b *Builder) {
+				b.Vector(false, false, func(b *Builder) {
+					b.Map(func(b *Builder) {
+						b.IntField([]byte("a"), 1)
+						b.IntField([]byte("b"), 2)
+					})
+					b.Map(func(b *Builder) {
+						b.IntField([]byte("a"), 3)
+						b.IntField([]byte("b"), 4)
+					})
+				})
+			},
+			assertFn: func(a *assert.Assertions, r Reference) {
+				a.Equal(int64(1), r.AsVector().AtOrNull(0).AsMap().GetOrNull("a").AsInt64())
+				a.Equal(int64(2), r.AsVector().AtOrNull(0).AsMap().GetOrNull("b").AsInt64())
+				a.Equal(int64(3), r.AsVector().AtOrNull(1).AsMap().GetOrNull("a").AsInt64())
+				a.Equal(int64(4), r.AsVector().AtOrNull(1).AsMap().GetOrNull("b").AsInt64())
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			a := assert.New(t)
-			b := NewBuilder()
+			b := NewBuilderWithFlags(c.builderFlags)
 			c.buildFn(b)
 			if err := b.Finish(); err != nil {
 				t.Error(err)
@@ -224,4 +279,129 @@ func TestBuildAndParse(t *testing.T) {
 			c.assertFn(a, b.Buffer().RootOrNull())
 		})
 	}
+}
+
+func TestBuilder_KeyShare(t *testing.T) {
+	a := assert.New(t)
+	b := NewBuilderWithFlags(BuilderFlagShareKeys)
+	b.Vector(false, false, func(b *Builder) {
+		b.Key([]byte("a"))
+		b.Key([]byte("b"))
+		b.Key([]byte("a"))
+	})
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	expected := []byte{
+		'a', 0,
+		'b', 0,
+		3, // vector length
+		5, // offset to 'a'
+		4, // offset to 'b'
+		7, // offset to 'a'
+		PackedType(BitWidth8, FBTKey),
+		PackedType(BitWidth8, FBTKey),
+		PackedType(BitWidth8, FBTKey),
+		6, // root
+		PackedType(BitWidth8, FBTVector),
+		1,
+	}
+	a.Equal(expected, []byte(b.Buffer()))
+}
+
+func TestBuilder_StringShare(t *testing.T) {
+	a := assert.New(t)
+	b := NewBuilderWithFlags(BuilderFlagShareStrings)
+	b.Vector(false, false, func(b *Builder) {
+		b.StringValue("a")
+		b.StringValue("b")
+		b.StringValue("a")
+	})
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	expected := []byte{
+		1, 'a', 0,
+		1, 'b', 0,
+		3, // vector length
+		6, // offset to 'a'
+		4, // offset to 'b'
+		8, // offset to 'a'
+		PackedType(BitWidth8, FBTString),
+		PackedType(BitWidth8, FBTString),
+		PackedType(BitWidth8, FBTString),
+		6, // root
+		PackedType(BitWidth8, FBTVector),
+		1,
+	}
+	a.Equal(expected, []byte(b.Buffer()))
+}
+
+func TestBuilder_KeyVectorShare(t *testing.T) {
+	a := assert.New(t)
+	b := NewBuilderWithFlags(BuilderFlagShareKeyVectors)
+	b.Vector(false, false, func(b *Builder) {
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("a"), 1)
+			b.IntField([]byte("b"), 2)
+		})
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("c"), 1)
+			b.IntField([]byte("a"), 2)
+		})
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("b"), 1)
+			b.IntField([]byte("a"), 2)
+		})
+	})
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	vec := b.Buffer().RootOrNull().AsVector()
+	m0Keys, _ := vec.AtOrNull(0).AsMap().Keys()
+	m1Keys, _ := vec.AtOrNull(1).AsMap().Keys()
+	m2Keys, _ := vec.AtOrNull(2).AsMap().Keys()
+	a.NotEqual(0, m0Keys.offset)
+	a.NotEqual(0, m1Keys.offset)
+	a.NotEqual(0, m2Keys.offset)
+	a.Equal(m0Keys.offset, m2Keys.offset)
+	a.NotEqual(m0Keys.offset, m1Keys.offset)
+	a.NotEqual(m1Keys.offset, m2Keys.offset)
+}
+
+func TestBuilder_KeyAndKeyVectorShare(t *testing.T) {
+	a := assert.New(t)
+	b := NewBuilderWithFlags(BuilderFlagShareKeyVectors | BuilderFlagShareKeys)
+	b.Vector(false, false, func(b *Builder) {
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("a"), 1)
+			b.IntField([]byte("b"), 2)
+		})
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("c"), 1)
+			b.IntField([]byte("a"), 2)
+		})
+		b.Map(func(b *Builder) {
+			b.IntField([]byte("b"), 1)
+			b.IntField([]byte("a"), 2)
+		})
+	})
+	if err := b.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	vec := b.Buffer().RootOrNull().AsVector()
+	m0Keys, _ := vec.AtOrNull(0).AsMap().Keys()
+	m1Keys, _ := vec.AtOrNull(1).AsMap().Keys()
+	m2Keys, _ := vec.AtOrNull(2).AsMap().Keys()
+	a.NotEqual(0, m0Keys.offset)
+	a.NotEqual(0, m1Keys.offset)
+	a.NotEqual(0, m2Keys.offset)
+	a.Equal(m0Keys.offset, m2Keys.offset)
+	a.NotEqual(m0Keys.offset, m1Keys.offset)
+	a.NotEqual(m1Keys.offset, m2Keys.offset)
+
+	// doesn't share keys vector but shares each key data
+	m00, _ := m0Keys.AtOrNull(0).indirect() // 'a' key
+	m11, _ := m1Keys.AtOrNull(0).indirect() // 'a' key, note map at index 1 will be sorted
+	a.Equal(m00, m11)
 }
