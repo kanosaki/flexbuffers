@@ -20,7 +20,7 @@ jobs:
       run: |
         go get -v -t -d ./...
 
-    - name: Test (unsafe)
+    - name: Test (safe)
       run: go test -v .
       
     - name: Test (unsafe)
