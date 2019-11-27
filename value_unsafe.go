@@ -13,7 +13,8 @@ func newValueInt(u int64, t Type, bw BitWidth) value {
 }
 
 func newValueFloat32(u float32) value {
-	return value{d: *(*int64)(unsafe.Pointer(&u)), typ: FBTFloat, minBitWidth: BitWidth32}
+	f := float64(u)
+	return value{d: *(*int64)(unsafe.Pointer(&f)), typ: FBTFloat, minBitWidth: BitWidth32}
 }
 
 func newValueFloat64(u float64) value {

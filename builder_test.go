@@ -46,6 +46,16 @@ func TestBuildAndParse(t *testing.T) {
 			},
 		},
 		{
+			name: "simple_float32",
+			buildFn: func(b *Builder) {
+				b.Float32(float32(math.Pi))
+			},
+			assertFn: func(a *assert.Assertions, r Reference) {
+				a.Equal(4, int(r.parentWidth)) // use parentWidth because int is inline type
+				a.Equal(float32(math.Pi), r.AsFloat32())
+			},
+		},
+		{
 			name: "simple_uint16_upper",
 			buildFn: func(b *Builder) {
 				b.UInt(math.MaxInt16 + 1)
@@ -53,6 +63,32 @@ func TestBuildAndParse(t *testing.T) {
 			assertFn: func(a *assert.Assertions, r Reference) {
 				a.Equal(2, int(r.parentWidth)) // use parentWidth because int is inline type
 				a.Equal(uint64(math.MaxInt16+1), r.AsUInt64())
+			},
+		},
+		{
+			name: "negative_number_boundaries",
+			buildFn: func(b *Builder) {
+				b.Vector(false, false, func(b *Builder) {
+					b.Int(-1)
+					b.Int(math.MinInt8)
+					b.Int(math.MinInt16)
+					b.Int(math.MinInt32)
+					b.Int(math.MinInt64)
+					b.Int(math.MinInt8 - 1)
+					b.Int(math.MinInt16 - 1)
+					b.Int(math.MinInt32 - 1)
+				})
+			},
+			assertFn: func(a *assert.Assertions, r Reference) {
+				vec := r.AsVector()
+				a.Equal(int64(-1), vec.AtOrNull(0).AsInt64())
+				a.Equal(int64(math.MinInt8), vec.AtOrNull(1).AsInt64())
+				a.Equal(int64(math.MinInt16), vec.AtOrNull(2).AsInt64())
+				a.Equal(int64(math.MinInt32), vec.AtOrNull(3).AsInt64())
+				a.Equal(int64(math.MinInt64), vec.AtOrNull(4).AsInt64())
+				a.Equal(int64(math.MinInt8-1), vec.AtOrNull(5).AsInt64())
+				a.Equal(int64(math.MinInt16-1), vec.AtOrNull(6).AsInt64())
+				a.Equal(int64(math.MinInt32-1), vec.AtOrNull(7).AsInt64())
 			},
 		},
 		{
