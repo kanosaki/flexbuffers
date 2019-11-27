@@ -162,7 +162,7 @@ func WidthF(f float64) BitWidth {
 }
 
 type Object struct {
-	buf       Raw
+	buf       *Raw
 	offset    int
 	byteWidth uint8
 }
@@ -178,21 +178,21 @@ func (s Sized) SizeOrZero() int {
 
 func (s Sized) Size() (int, error) {
 	sizeOffset := s.offset - int(s.byteWidth)
-	if sizeOffset < 0 || len(s.buf) <= sizeOffset {
+	if sizeOffset < 0 || len(*s.buf) <= sizeOffset {
 		return 0, ErrOutOfRange
 	}
 	var ret int
 	if s.byteWidth < 4 {
 		if s.byteWidth < 2 {
-			ret = int(*(*uint8)(unsafe.Pointer(&s.buf[sizeOffset])))
+			ret = int(*(*uint8)(unsafe.Pointer(&(*s.buf)[sizeOffset])))
 		} else {
-			ret = int(*(*uint16)(unsafe.Pointer(&s.buf[sizeOffset])))
+			ret = int(*(*uint16)(unsafe.Pointer(&(*s.buf)[sizeOffset])))
 		}
 	} else {
 		if s.byteWidth < 8 {
-			ret = int(*(*uint32)(unsafe.Pointer(&s.buf[sizeOffset])))
+			ret = int(*(*uint32)(unsafe.Pointer(&(*s.buf)[sizeOffset])))
 		} else {
-			ret = int(*(*uint64)(unsafe.Pointer(&s.buf[sizeOffset])))
+			ret = int(*(*uint64)(unsafe.Pointer(&(*s.buf)[sizeOffset])))
 		}
 	}
 	if ret < 0 {
@@ -206,7 +206,7 @@ type Key struct {
 }
 
 func (k Key) StringValue() string {
-	s, err := unsafeReadCString(k.buf, k.offset)
+	s, err := unsafeReadCString(*k.buf, k.offset)
 	if err != nil {
 		return ""
 	}
@@ -214,9 +214,10 @@ func (k Key) StringValue() string {
 }
 
 func EmptyKey() Key {
+	nb := Raw([]byte{0})
 	return Key{
 		Object: Object{
-			buf:       []byte{0},
+			buf:       &nb,
 			offset:    0,
 			byteWidth: 0,
 		},
@@ -238,10 +239,10 @@ func (s String) StringValue() (string, error) {
 		return "", err
 	}
 	endOffset := s.offset + size
-	if s.offset < 0 || len(s.buf) <= s.offset || endOffset < 0 || len(s.buf) <= endOffset {
+	if s.offset < 0 || len(*s.buf) <= s.offset || endOffset < 0 || len(*s.buf) <= endOffset {
 		return "", ErrOutOfRange
 	}
-	return string(s.buf[s.offset:endOffset]), nil // trim last nil terminator
+	return string((*s.buf)[s.offset:endOffset]), nil // trim last nil terminator
 }
 
 func (s String) UnsafeStringValueOrEmpty() string {
@@ -254,12 +255,12 @@ func (s String) UnsafeStringValue() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if s.offset < 0 || len(s.buf) <= s.offset || len(s.buf) - s.offset < size {
+	if s.offset < 0 || len(*s.buf) <= s.offset || len(*s.buf) - s.offset < size {
 		return "", ErrOutOfRange
 	}
 	var sh reflect.StringHeader
 	sh.Len = size
-	sh.Data = (uintptr)(unsafe.Pointer(&s.buf[s.offset]))
+	sh.Data = (uintptr)(unsafe.Pointer(&(*s.buf)[s.offset]))
 	return *(*string)(unsafe.Pointer(&sh)), nil
 }
 
@@ -269,15 +270,16 @@ func (s String) IsEmpty() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return bytes.Equal(s.buf[s.offset:s.offset+sz], es.buf[es.offset:es.offset+es.SizeOrZero()]), nil
+	return bytes.Equal((*s.buf)[s.offset:s.offset+sz], (*es.buf)[es.offset:es.offset+es.SizeOrZero()]), nil
 }
 
 // TODO: define as var?
 func EmptyString() String {
+	b := Raw([]byte{0 /* len */, 0 /* terminator */})
 	return String{
 		Sized{
 			Object{
-				buf:       []byte{0 /* len */, 0 /* terminator */},
+				buf:       &b,
 				offset:    1,
 				byteWidth: 1,
 			},
@@ -298,14 +300,15 @@ func (b Blob) Data() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return b.buf[b.offset : b.offset+sz], nil
+	return (*b.buf)[b.offset : b.offset+sz], nil
 }
 
 func EmptyBlob() Blob {
+	b := Raw([]byte{0 /* len */})
 	return Blob{
 		Sized{
 			Object{
-				buf:       []byte{0 /* len */},
+				buf:       &b,
 				offset:    1,
 				byteWidth: 1,
 			},
@@ -332,10 +335,10 @@ func (v Vector) AtRef(i int, ref *Reference) error {
 		return ErrNotFound
 	}
 	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
-	if packedTypeOffset < 0 || len(v.buf) <= packedTypeOffset {
+	if packedTypeOffset < 0 || len(*v.buf) <= packedTypeOffset {
 		return ErrOutOfRange
 	}
-	packedType := v.buf[packedTypeOffset]
+	packedType := (*v.buf)[packedTypeOffset]
 	return setReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType, ref)
 }
 
@@ -356,18 +359,19 @@ func (v Vector) At(i int) (Reference, error) {
 		return Reference{}, ErrNotFound
 	}
 	packedTypeOffset := v.offset + l*int(v.byteWidth) + i
-	if len(v.buf) <= packedTypeOffset {
+	if len(*v.buf) <= packedTypeOffset {
 		return Reference{}, ErrOutOfRange
 	}
-	packedType := v.buf[packedTypeOffset]
+	packedType := (*v.buf)[packedTypeOffset]
 	return NewReferenceFromPackedType(v.buf, v.offset+i*int(v.byteWidth), v.byteWidth, packedType)
 }
 
 func EmptyVector() Vector {
+	b := Raw([]byte{0})
 	return Vector{
 		Sized{
 			Object{
-				buf:       []byte{0},
+				buf:       &b,
 				offset:    1,
 				byteWidth: 1,
 			},
@@ -387,7 +391,7 @@ func (v TypedVector) compareAtKey(i int, key []byte) (int, error) {
 		return 0, err
 	}
 	for i, c := range key {
-		kc := v.buf[ind+i]
+		kc := (*v.buf)[ind+i]
 		if kc == 0 {
 			return -1, nil
 		} else if kc > c {
@@ -441,10 +445,11 @@ func (v TypedVector) At(i int) (Reference, error) {
 }
 
 func EmptyTypedVector() TypedVector {
+	b := Raw([]byte{0})
 	return TypedVector{
 		Sized: Sized{
 			Object{
-				buf:       []byte{0},
+				buf:       &b,
 				offset:    1,
 				byteWidth: 1,
 			},
@@ -498,9 +503,10 @@ func (v FixedTypedVector) At(i int) (Reference, error) {
 }
 
 func EmptyFixedTypedVector() FixedTypedVector {
+	b := Raw([]byte{0})
 	return FixedTypedVector{
 		Object: Object{
-			buf:       []byte{0},
+			buf:       &b,
 			offset:    1,
 			byteWidth: 1,
 		},
@@ -514,11 +520,12 @@ type Map struct {
 }
 
 func EmptyMap() Map {
+	b := Raw([]byte{0 /* keys_len */, 0 /* keys_offset */, 1 /* keys_width */, 0 /* len */})
 	return Map{
 		Vector{
 			Sized{
 				Object{
-					buf:       []byte{0 /* keys_len */, 0 /* keys_offset */, 1 /* keys_width */, 0 /* len */},
+					buf:       &b,
 					offset:    4,
 					byteWidth: 1,
 				},
@@ -541,7 +548,7 @@ func (m Map) Keys() (TypedVector, error) {
 	if bw <= 0 || bw > 8 {
 		return TypedVector{}, ErrInvalidData
 	}
-	if off < 0 || len(m.buf) <= off {
+	if off < 0 || len(*m.buf) <= off {
 		return TypedVector{}, ErrOutOfRange
 	}
 	return TypedVector{

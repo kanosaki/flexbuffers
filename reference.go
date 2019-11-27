@@ -25,15 +25,15 @@ var NullReference = Reference{
 }
 
 type Reference struct {
-	data_       Raw
+	data_       *Raw
 	offset      int
+	type_       Type
 	parentWidth uint8
 	byteWidth   uint8
-	type_       Type
 }
 
 func (r Reference) CheckBoundary() error {
-	if r.offset < 0 || len(r.data_) <= r.offset {
+	if r.offset < 0 || len(*r.data_) <= r.offset {
 		return ErrOutOfRange
 	}
 	return nil
@@ -199,9 +199,9 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 	return
 }
 
-func setReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8, ref *Reference) error {
+func setReferenceFromPackedType(buf *Raw, offset int, parentWidth uint8, packedType uint8, ref *Reference) error {
 	bw := 1 << (packedType & 3)
-	if offset < 0 || len(buf) <= offset+bw {
+	if offset < 0 || len(*buf) <= offset+bw {
 		return ErrOutOfRange
 	}
 	ref.data_ = buf
@@ -212,7 +212,7 @@ func setReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedTy
 	return nil
 }
 
-func NewReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8) (Reference, error) {
+func NewReferenceFromPackedType(buf *Raw, offset int, parentWidth uint8, packedType uint8) (Reference, error) {
 	r := Reference{
 		data_:       buf,
 		offset:      offset,
@@ -361,7 +361,7 @@ func (r Reference) Int64() (int64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s, err := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString((*r.data_)[ind:])
 			if err != nil {
 				return 0, err
 			}
@@ -451,7 +451,7 @@ func (r Reference) UInt64() (uint64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s, err := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString((*r.data_)[ind:])
 			if err != nil {
 				return 0, err
 			}
@@ -532,7 +532,7 @@ func (r Reference) Float64() (float64, error) {
 			if err != nil {
 				return 0, err
 			}
-			s, err := cstringBytesToString(r.data_[ind:])
+			s, err := cstringBytesToString((*r.data_)[ind:])
 			if err != nil {
 				return 0, err
 			}
@@ -573,7 +573,7 @@ func (r Reference) asStringKey() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return unsafeReadCString(r.data_, ind)
+		return unsafeReadCString(*r.data_, ind)
 	} else {
 		return "", nil
 	}
@@ -850,11 +850,11 @@ func (r Reference) MutateString(s string) bool {
 		return false
 	}
 	data := *(*[]byte)(unsafe.Pointer(&s))
-	if r.offset < 0 || len(r.data_) <= r.offset || len(r.data_) <= r.offset+len(data) {
+	if r.offset < 0 || len(*r.data_) <= r.offset || len(*r.data_) <= r.offset+len(data) {
 		return false
 	}
-	copy(r.data_[r.offset:], data)
-	r.data_[r.offset+len(data)] = 0 // NUL terminator
+	copy((*r.data_)[r.offset:], data)
+	(*r.data_)[r.offset+len(data)] = 0 // NUL terminator
 	return true
 }
 func (r Reference) Validate() (err error) {
