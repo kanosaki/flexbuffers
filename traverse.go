@@ -12,7 +12,7 @@ var (
 
 // Traverser provides optimized document traversing. Use Raw.Lookup if there is no special reason.
 type Traverser struct {
-	buf         *Raw
+	buf         Raw
 	offset      int
 	typ         Type
 	byteWidth   int
@@ -49,7 +49,7 @@ func (t *Traverser) digMap(key string) error {
 			return true
 		}
 		for i, c := range keyBytes {
-			kc := (*t.buf)[ind+i]
+			kc := t.buf[ind+i]
 			if kc == 0 {
 				return false // -1
 			} else if kc > c {
@@ -70,14 +70,14 @@ func (t *Traverser) digMap(key string) error {
 		}
 		exactEqual := true
 		for i, c := range keyBytes {
-			kc := (*t.buf)[keyDataOffset+i]
+			kc := t.buf[keyDataOffset+i]
 			if kc == 0 || kc != c {
 				exactEqual = false
 				break
 			}
 		}
 		if exactEqual {
-			valuePackedType := (*t.buf)[mapOffset+keysLen*t.byteWidth+foundIdx]
+			valuePackedType := t.buf[mapOffset+keysLen*t.byteWidth+foundIdx]
 			valueOffset := mapOffset + foundIdx*t.byteWidth
 
 			// proceed
