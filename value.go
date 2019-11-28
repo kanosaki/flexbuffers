@@ -1,7 +1,8 @@
-
 package flexbuffers
 
-import "unsafe"
+import (
+	"math"
+)
 
 type value struct {
 	d           int64
@@ -58,7 +59,11 @@ func (v value) StoredWidth(parentBitWidth BitWidth) BitWidth {
 }
 
 func (v value) AsFloat() float64 {
-	return *(*float64)(unsafe.Pointer(&v.d))
+	if v.minBitWidth == BitWidth32 {
+		return float64(math.Float32frombits(uint32(v.d)))
+	} else {
+		return math.Float64frombits(uint64(v.d))
+	}
 }
 
 func (v value) AsInt() int64 {
@@ -66,5 +71,29 @@ func (v value) AsInt() int64 {
 }
 
 func (v value) AsUInt() uint64 {
-	return *(*uint64)(unsafe.Pointer(&v.d))
+	return uint64(v.d)
+}
+
+func newValueUInt(u uint64, t Type, bw BitWidth) value {
+	return value{d: int64(u), typ: t, minBitWidth: bw}
+}
+
+func newValueInt(u int64, t Type, bw BitWidth) value {
+	return value{d: u, typ: t, minBitWidth: bw}
+}
+
+func newValueFloat32(u float32) value {
+	return value{d: int64(math.Float32bits(u)), typ: FBTFloat, minBitWidth: BitWidth32}
+}
+
+func newValueFloat64(d float64) value {
+	// Refer: WidthF
+	f := float32(d)
+	if float64(f) == d {
+		// float32
+		return value{d: int64(math.Float32bits(f)), typ: FBTFloat, minBitWidth: BitWidth32}
+	} else {
+		// float64
+		return value{d: int64(math.Float64bits(d)), typ: FBTFloat, minBitWidth: BitWidth64}
+	}
 }

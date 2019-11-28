@@ -85,9 +85,9 @@ func (b *Builder) WriteInt(i int64, bw int) {
 func (b *Builder) WriteDouble(f float64, byteWidth int) error {
 	ptr := b.allocateUnsafe(byteWidth)
 	if byteWidth == 4 {
-		*(*float64)(ptr) = f
-	} else if byteWidth == 8 {
 		*(*float32)(ptr) = float32(f)
+	} else if byteWidth == 8 {
+		*(*float64)(ptr) = f
 	} else {
 		return fmt.Errorf("invalid float width: %d", byteWidth)
 	}
