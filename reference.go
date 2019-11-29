@@ -104,14 +104,18 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 		if err != nil {
 			return err
 		}
-		unsafeStr, err := sRef.UnsafeStringValue()
+		unsafeStr, err := sRef.StringValue()
 		if err != nil {
 			return err
 		}
-		replacer := strings.NewReplacer("\"", "\\\"", "\\", "\\\\")
-		s := replacer.Replace(unsafeStr)
-		_, err = fmt.Fprintf(w, "\"%s\"", s)
+		out := make([]byte, 0, len(unsafeStr))
+		out = escapeString(out, unsafeStr)
+
+		_, err = fmt.Fprintf(w, b2s(out))
 	case FBTMap:
+		if _, err := fmt.Fprintf(w, "{"); err != nil {
+			return err
+		}
 		m, err := r.Map()
 		if err != nil {
 			return err
@@ -144,6 +148,14 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 			if err := v.WriteAsJson(w); err != nil {
 				return err
 			}
+			if i != sz-1 {
+				if _, err := fmt.Fprintf(w, ","); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := fmt.Fprintf(w, "}"); err != nil {
+			return err
 		}
 	case FBTVector:
 		vec, err := r.Vector()

@@ -251,7 +251,6 @@ func unescapeStringBestEffort(s string) string {
 
 	// Slow path - unescape string.
 	var b []byte
-	b = b[:n]
 	s = s[n+1:]
 	for len(s) > 0 {
 		ch := s[0]
