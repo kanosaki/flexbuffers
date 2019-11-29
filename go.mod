@@ -8,7 +8,7 @@ require (
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/google/flatbuffers v1.11.0
-	github.com/google/go-cmp v0.3.1 // indirect
+	github.com/google/go-cmp v0.3.1
 	github.com/stephens2424/writerset v1.0.2 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/pretty v1.0.0 // indirect
