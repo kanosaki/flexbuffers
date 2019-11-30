@@ -99,3 +99,5 @@ samplegen/flexbuffers-samplegen
 build/
 
 *.cbp
+
+bench/scanbench/data.json
