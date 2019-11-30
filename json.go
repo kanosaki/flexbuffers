@@ -24,25 +24,8 @@ func FromJson(data []byte) (Raw, error) {
 	return b.Buffer(), nil
 }
 
-type StreamReceiver interface {
-	PushString(s string) error
-	PushBlob(b []byte) error
-	PushInt(i int64) error
-	PushUint(u uint64) error
-	PushFloat(f float64) error
-	PushBool(b bool) error
-	PushNull() error
-
-	BeginArray() (int, error)
-	EndArray(int) error
-
-	BeginObject() (int, error)
-	EndObject(int) error
-	PushObjectKey(k string) error
-}
-
 type JsonReader struct {
-	Output StreamReceiver
+	Output DocumentWriter
 }
 
 func skipWS(s string) string {
