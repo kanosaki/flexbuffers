@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"flexbuffers/pkg/unsafeutil"
 )
 
 var (
@@ -109,9 +111,9 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 			return err
 		}
 		out := make([]byte, 0, len(unsafeStr))
-		out = escapeString(out, unsafeStr)
+		out = EscapeJSONString(out, unsafeStr)
 
-		_, err = fmt.Fprintf(w, b2s(out))
+		_, err = fmt.Fprintf(w, unsafeutil.B2S(out))
 	case FBTMap:
 		if _, err := fmt.Fprintf(w, "{"); err != nil {
 			return err

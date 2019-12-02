@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
@@ -51,18 +53,27 @@ func unsafeReadCString(buf []byte, offset int) (string, error) {
 	return unsafeBufferString(buf, offset, size), nil
 }
 
+func EscapeJSONString(dst []byte, s string) []byte {
+	if !hasSpecialChars(s) {
+		// Fast path - nothing to escape.
+		dst = append(dst, '"')
+		dst = append(dst, s...)
+		dst = append(dst, '"')
+		return dst
+	}
 
-// From: https://github.com/valyala/fastjson
-func b2s(b []byte) string {
-	return *(*string)(unsafe.Pointer(&b))
+	// Slow path.
+	return strconv.AppendQuote(dst, s)
 }
 
-// From: https://github.com/valyala/fastjson
-func s2b(s string) []byte {
-	strh := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	var sh reflect.SliceHeader
-	sh.Data = strh.Data
-	sh.Len = strh.Len
-	sh.Cap = strh.Len
-	return *(*[]byte)(unsafe.Pointer(&sh))
+func hasSpecialChars(s string) bool {
+	if strings.IndexByte(s, '"') >= 0 || strings.IndexByte(s, '\\') >= 0 {
+		return true
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 {
+			return true
+		}
+	}
+	return false
 }

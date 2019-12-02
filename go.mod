@@ -3,6 +3,8 @@ module flexbuffers
 go 1.13
 
 require (
+	github.com/bxcodec/faker v2.0.1+incompatible // indirect
+	github.com/bxcodec/faker/v3 v3.2.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/dvyukov/go-fuzz v0.0.0-20191022152526-8cb203812681 // indirect
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect

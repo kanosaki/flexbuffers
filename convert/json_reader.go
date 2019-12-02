@@ -1,4 +1,4 @@
-package flexbuffers
+package convert
 
 // json parsing code based on https://github.com/valyala/fastjson
 
@@ -9,12 +9,15 @@ import (
 	"unicode/utf16"
 
 	"github.com/valyala/fastjson/fastfloat"
+
+	"flexbuffers"
+	"flexbuffers/pkg/unsafeutil"
 )
 
-func FromJson(data []byte) (Raw, error) {
-	b := NewBuilder()
-	r := JsonReader{Output: b}
-	_, err := r.parseValue(b2s(data))
+func FromJson(data []byte) (flexbuffers.Raw, error) {
+	b := flexbuffers.NewBuilder()
+	r := JsonReader{Output: &FlexbuffersWriter{b: b}}
+	_, err := r.parseValue(unsafeutil.B2S(data))
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +28,7 @@ func FromJson(data []byte) (Raw, error) {
 }
 
 type JsonReader struct {
-	Output DocumentWriter
+	Output flexbuffers.DocumentWriter
 }
 
 func skipWS(s string) string {
@@ -200,31 +203,6 @@ func (r *JsonReader) parseObject(s string) (string, error) {
 	}
 }
 
-func escapeString(dst []byte, s string) []byte {
-	if !hasSpecialChars(s) {
-		// Fast path - nothing to escape.
-		dst = append(dst, '"')
-		dst = append(dst, s...)
-		dst = append(dst, '"')
-		return dst
-	}
-
-	// Slow path.
-	return strconv.AppendQuote(dst, s)
-}
-
-func hasSpecialChars(s string) bool {
-	if strings.IndexByte(s, '"') >= 0 || strings.IndexByte(s, '\\') >= 0 {
-		return true
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 {
-			return true
-		}
-	}
-	return false
-}
-
 func unescapeStringBestEffort(s string) string {
 	n := strings.IndexByte(s, '\\')
 	if n < 0 {
@@ -302,7 +280,7 @@ func unescapeStringBestEffort(s string) string {
 		b = append(b, s[:n]...)
 		s = s[n+1:]
 	}
-	return b2s(b)
+	return unsafeutil.B2S(b)
 }
 
 // parseRawKey is similar to parseRawString, but is optimized

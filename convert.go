@@ -16,4 +16,3 @@ type DocumentWriter interface {
 	EndObject(int) error
 	PushObjectKey(k string) error
 }
-
