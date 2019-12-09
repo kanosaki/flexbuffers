@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	LookupBinarySearchThreshold = 4
+	LookupBinarySearchThreshold       = 4
+	MetaBit                     uint8 = 1 << 7
 )
 
 type BitWidth int
@@ -123,11 +124,19 @@ func ToFixedTypedVectorElementType(t Type, len *uint8) Type {
 	return fixedType%3 + FBTInt
 }
 
-func PackedType(bitWidth BitWidth, typ Type) uint8 {
-	return uint8(bitWidth) | (uint8(typ) << 2)
+func PackedType(bitWidth BitWidth, typ Type, withMeta bool) uint8 {
+	if withMeta {
+		return MetaBit | uint8(bitWidth) | (uint8(typ) << 2)
+	} else {
+		return uint8(bitWidth) | (uint8(typ) << 2)
+	}
 }
 
-var NullPackedType = PackedType(BitWidth8, FBTNull)
+func UnpackType(packedType uint8) (BitWidth, Type, bool) {
+	return 1 << (packedType & 3), Type(packedType >> 2 &^ MetaBit), packedType&MetaBit == MetaBit
+}
+
+var NullPackedType = PackedType(BitWidth8, FBTNull, false)
 
 type half int16
 type quarter int8
@@ -254,7 +263,7 @@ func (s String) UnsafeStringValue() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if s.offset < 0 || len(s.buf) <= s.offset || len(s.buf) - s.offset < size {
+	if s.offset < 0 || len(s.buf) <= s.offset || len(s.buf)-s.offset < size {
 		return "", ErrOutOfRange
 	}
 	var sh reflect.StringHeader

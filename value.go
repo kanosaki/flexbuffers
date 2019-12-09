@@ -19,7 +19,7 @@ func newValueBool(b bool) value {
 }
 
 func (v value) StoredPackedType(bw BitWidth) uint8 {
-	return PackedType(v.StoredWidth(bw), v.typ)
+	return PackedType(v.StoredWidth(bw), v.typ, false)
 }
 
 func PaddingBytes(bufSize, scalarSize int) int {

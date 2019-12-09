@@ -335,11 +335,11 @@ func TestBuilder_KeyShare(t *testing.T) {
 		5, // offset to 'a'
 		4, // offset to 'b'
 		7, // offset to 'a'
-		PackedType(BitWidth8, FBTKey),
-		PackedType(BitWidth8, FBTKey),
-		PackedType(BitWidth8, FBTKey),
+		PackedType(BitWidth8, FBTKey, false),
+		PackedType(BitWidth8, FBTKey, false),
+		PackedType(BitWidth8, FBTKey, false),
 		6, // root
-		PackedType(BitWidth8, FBTVector),
+		PackedType(BitWidth8, FBTVector, false),
 		1,
 	}
 	a.Equal(expected, []byte(b.Buffer()))
@@ -363,11 +363,11 @@ func TestBuilder_StringShare(t *testing.T) {
 		6, // offset to 'a'
 		4, // offset to 'b'
 		8, // offset to 'a'
-		PackedType(BitWidth8, FBTString),
-		PackedType(BitWidth8, FBTString),
-		PackedType(BitWidth8, FBTString),
+		PackedType(BitWidth8, FBTString, false),
+		PackedType(BitWidth8, FBTString, false),
+		PackedType(BitWidth8, FBTString, false),
 		6, // root
-		PackedType(BitWidth8, FBTVector),
+		PackedType(BitWidth8, FBTVector, false),
 		1,
 	}
 	a.Equal(expected, []byte(b.Buffer()))
