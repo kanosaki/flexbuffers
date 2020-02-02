@@ -1,4 +1,4 @@
-package convert
+package process
 
 // json parsing code based on https://github.com/valyala/fastjson
 
@@ -28,7 +28,7 @@ func FromJson(data []byte) (flexbuffers.Raw, error) {
 }
 
 type JsonReader struct {
-	Output flexbuffers.DocumentWriter
+	Output DocumentWriter
 }
 
 func skipWS(s string) string {

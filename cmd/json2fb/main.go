@@ -5,14 +5,14 @@ import (
 	"encoding/binary"
 	"os"
 
-	"flexbuffers/convert"
+	"flexbuffers/process"
 )
 
 func main() {
 	out := os.Stdout
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		raw, err := convert.FromJson(scanner.Bytes())
+		raw, err := process.FromJson(scanner.Bytes())
 		if err != nil {
 			panic(err)
 		}

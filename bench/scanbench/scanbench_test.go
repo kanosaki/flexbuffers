@@ -60,7 +60,7 @@ func BenchmarkScanFlexbuffer(b *testing.B) {
 	jsonDocs := scanJsons(b)
 	var docs []flexbuffers.Raw
 	for _, d := range jsonDocs {
-		fbDoc, err := convert.FromJson(d)
+		fbDoc, err := process.FromJson(d)
 		if err != nil {
 			b.Fatal(err)
 		}

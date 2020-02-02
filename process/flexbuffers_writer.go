@@ -1,4 +1,4 @@
-package convert
+package process
 
 import (
 	"flexbuffers"

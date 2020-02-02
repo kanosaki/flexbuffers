@@ -1,4 +1,4 @@
-package convert
+package process
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 )
 
 type BSONReader struct {
-	Output flexbuffers.DocumentWriter
+	Output DocumentWriter
 }
 
 func (b *BSONReader) readDocument(d bson.Raw) error {
@@ -137,55 +137,4 @@ func (b *BSONReader) readRawValue(rv bson.RawValue) error {
 	default:
 		return flexbuffers.ErrInvalidData
 	}
-}
-
-type BSONWriter struct {
-}
-
-func (B *BSONWriter) PushString(s string) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushBlob(b []byte) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushInt(i int64) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushUint(u uint64) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushFloat(f float64) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushBool(b bool) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushNull() error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) BeginArray() (int, error) {
-	panic("implement me")
-}
-
-func (B *BSONWriter) EndArray(int) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) BeginObject() (int, error) {
-	panic("implement me")
-}
-
-func (B *BSONWriter) EndObject(int) error {
-	panic("implement me")
-}
-
-func (B *BSONWriter) PushObjectKey(k string) error {
-	panic("implement me")
 }

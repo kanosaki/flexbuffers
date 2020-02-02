@@ -101,3 +101,4 @@ build/
 *.cbp
 
 bench/scanbench/data.json
+!/go.mod

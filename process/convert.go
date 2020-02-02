@@ -1,5 +1,10 @@
-package flexbuffers
+package process
 
+type DocumentReader interface {
+	SetOutput(w DocumentWriter) error
+	ReadBuffer(b []byte) error
+	// TODO: add function that accepts io.Reader as Input
+}
 type DocumentWriter interface {
 	PushString(s string) error
 	PushBlob(b []byte) error
