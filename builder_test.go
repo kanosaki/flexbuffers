@@ -2,13 +2,38 @@ package flexbuffers
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math"
+	"os"
+	"path"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBuildAndParse(t *testing.T) {
+	buildResultDir := "./testdata/builder_test"
+	verifyResult := func(name string, d []byte) {
+		p := path.Join(buildResultDir, fmt.Sprintf("%s.flexbuf", name))
+		_, err := os.Stat(p)
+		if err == nil {
+			expected, err := ioutil.ReadFile(p)
+			if err != nil {
+				t.Fatalf("failed to read result file: %v", err)
+			}
+			if diff := cmp.Diff(expected, d); diff != "" {
+				t.Errorf("verify failed against %s: %s", p, diff)
+			}
+		} else if os.IsNotExist(err) {
+			if err := ioutil.WriteFile(p, d, 0644); err != nil {
+				t.Fatalf("failed to create result file: %v", err)
+			}
+			t.Logf("build result created: %s", p)
+		} else {
+			t.Fatalf("failed to open result file: %v", err)
+		}
+	}
 	cases := []struct {
 		name         string
 		builderFlags BuilderFlag
@@ -312,6 +337,7 @@ func TestBuildAndParse(t *testing.T) {
 			if err := b.Finish(); err != nil {
 				t.Error(err)
 			}
+			verifyResult(c.name, b.Buffer())
 			c.assertFn(a, b.Buffer().RootOrNull())
 		})
 	}
