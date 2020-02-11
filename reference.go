@@ -696,6 +696,11 @@ func (r Reference) AnyVector() (AnyVector, error) {
 	}
 }
 
+func (r Reference) AsAnyVector() AnyVector {
+	v, _ := r.AnyVector()
+	return v
+}
+
 func (r Reference) AsVector() Vector {
 	v, _ := r.Vector()
 	return v
@@ -950,6 +955,8 @@ func (r Reference) validate(visited map[int]struct{}) (err error) {
 	}
 	visited[r.offset] = struct{}{}
 
+	_ = r.Ext()
+
 	switch r.type_ {
 	case FBTInt, FBTIndirectInt:
 		_, err = r.Int64()
@@ -1045,4 +1052,23 @@ func (r Reference) validate(visited map[int]struct{}) (err error) {
 		err = fmt.Errorf("type is invalid: %d", r.type_)
 	}
 	return
+}
+
+func (r Reference) Ext() int64 {
+	if !r.hasExt {
+		return 0
+	}
+	// TODO: optimize?
+	switch {
+	case r.IsString():
+		return r.AsStringRef().Ext()
+	case r.IsBlob():
+		return r.AsBlob().Ext()
+	case r.IsMap():
+		return r.AsMap().Ext()
+	case r.IsAnyVector():
+		return r.AsAnyVector().Ext()
+	default:
+		return 0
+	}
 }

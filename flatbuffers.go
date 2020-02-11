@@ -331,6 +331,7 @@ type AnyVector interface {
 	AtRef(i int, ref *Reference) error
 	At(i int) (Reference, error)
 	Size() (int, error)
+	Ext() int64
 }
 
 type Vector struct {
