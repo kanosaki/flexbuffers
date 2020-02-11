@@ -43,7 +43,7 @@ func TestValue_AsUInt(t *testing.T) {
 		math.MaxUint8, math.MaxUint16, math.MaxUint32, math.MaxUint64,
 	}
 	for _, v := range vs {
-		val := newValueUInt(v, FBTUint, BitWidth64)
+		val := newValueUInt(v, FBTUint, BitWidth64, false)
 		a.Equal(v, val.AsUInt())
 	}
 }

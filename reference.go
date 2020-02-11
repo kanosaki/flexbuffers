@@ -4,6 +4,7 @@ import "C"
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -29,9 +30,10 @@ var NullReference = Reference{
 type Reference struct {
 	data_       Raw
 	offset      int
+	type_       Type
 	parentWidth uint8
 	byteWidth   uint8
-	type_       Type
+	hasExt      bool
 }
 
 func (r Reference) CheckBoundary() error {
@@ -214,25 +216,28 @@ func (r Reference) WriteAsJson(w io.Writer) (err error) {
 }
 
 func setReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8, ref *Reference) error {
-	bw := 1 << (packedType & 3)
-	if offset < 0 || len(buf) <= offset+bw {
+	bw, t, hasExt := UnpackType(packedType)
+	if offset < 0 || len(buf) <= offset+int(bw) {
 		return ErrOutOfRange
 	}
 	ref.data_ = buf
 	ref.offset = offset
 	ref.parentWidth = parentWidth
-	ref.byteWidth = uint8(bw)
-	ref.type_ = Type(packedType >> 2)
+	ref.byteWidth = bw.ByteWidth()
+	ref.type_ = t
+	ref.hasExt = hasExt
 	return nil
 }
 
 func NewReferenceFromPackedType(buf Raw, offset int, parentWidth uint8, packedType uint8) (Reference, error) {
+	bw, t, hasExt := UnpackType(packedType)
 	r := Reference{
 		data_:       buf,
 		offset:      offset,
 		parentWidth: parentWidth,
-		byteWidth:   1 << (packedType & 3),
-		type_:       Type(packedType >> 2),
+		byteWidth:   bw.ByteWidth(),
+		type_:       t,
+		hasExt:      hasExt,
 	}
 	return r, r.CheckBoundary()
 }
@@ -628,15 +633,21 @@ func (r Reference) StringRef() (String, error) {
 	if err != nil {
 		return String{}, err
 	}
-	return String{
-		Sized{
-			Object{
-				buf:       r.data_,
-				offset:    ind,
-				byteWidth: r.byteWidth,
-			},
+	sz := Sized{
+		Object{
+			buf:       r.data_,
+			offset:    ind,
+			byteWidth: r.byteWidth,
 		},
-	}, nil
+	}
+	if r.hasExt {
+		size, err := sz.Size()
+		if err != nil {
+			return EmptyString(), nil
+		}
+		sz.ext, _ = binary.Varint(r.data_[ind+size+1:]) //+1 for null byte
+	}
+	return String{sz}, nil
 }
 func (r Reference) AsBlob() Blob {
 	v, _ := r.Blob()
@@ -649,15 +660,25 @@ func (r Reference) Blob() (Blob, error) {
 		return Blob{}, err
 	}
 	if r.type_ == FBTBlob || r.type_ == FBTString {
-		return Blob{
-			Sized{
-				Object{
-					buf:       r.data_,
-					offset:    ind,
-					byteWidth: r.byteWidth,
-				},
+		sz := Sized{
+			Object{
+				buf:       r.data_,
+				offset:    ind,
+				byteWidth: r.byteWidth,
 			},
-		}, nil
+		}
+		if r.hasExt {
+			size, err := sz.Size()
+			if err != nil {
+				return EmptyBlob(), nil
+			}
+			var n int
+			sz.ext, n = binary.Varint(r.data_[ind+int(r.byteWidth)*size:])
+			if n <= 0 {
+				return EmptyBlob(), fmt.Errorf("failed to read ext")
+			}
+		}
+		return Blob{sz}, nil
 	} else {
 		return EmptyBlob(), nil
 	}
@@ -685,16 +706,23 @@ func (r Reference) Vector() (Vector, error) {
 	if err != nil {
 		return Vector{}, err
 	}
-	if r.type_ == FBTVector || r.type_ == FBTMap {
-		return Vector{
-			Sized{
-				Object{
-					buf:       r.data_,
-					offset:    ind,
-					byteWidth: r.byteWidth,
-				},
+	if r.type_ == FBTVector {
+		sz := Sized{
+			Object{
+				buf:       r.data_,
+				offset:    ind,
+				byteWidth: r.byteWidth,
 			},
-		}, nil
+		}
+		if r.hasExt {
+			size, err := sz.Size()
+			if err != nil {
+				return EmptyVector(), nil
+			}
+			// ind + body vector (byteWitdh * size) + type vector
+			sz.ext, _ = binary.Varint(r.data_[ind+int(r.byteWidth)*size+size:])
+		}
+		return Vector{sz}, nil
 	} else {
 		return EmptyVector(), nil
 	}
@@ -709,15 +737,23 @@ func (r Reference) TypedVector() (TypedVector, error) {
 	if err != nil {
 		return TypedVector{}, err
 	}
+	sz := Sized{
+		Object{
+			buf:       r.data_,
+			offset:    ind,
+			byteWidth: r.byteWidth,
+		},
+	}
+	if r.hasExt {
+		size, err := sz.Size()
+		if err != nil {
+			return EmptyTypedVector(), nil
+		}
+		sz.ext, _ = binary.Varint(r.data_[ind+int(r.byteWidth)*size:])
+	}
 	if r.IsTypedVector() {
 		return TypedVector{
-			Sized: Sized{
-				Object{
-					buf:       r.data_,
-					offset:    ind,
-					byteWidth: r.byteWidth,
-				},
-			},
+			Sized: sz,
 			type_: ToTypedVectorElementType(r.type_),
 		}, nil
 	} else {
@@ -742,11 +778,16 @@ func (r Reference) FixedTypedVector() (FixedTypedVector, error) {
 	}
 	var l uint8
 	vtype := ToFixedTypedVectorElementType(r.type_, &l)
+	var ext int64
+	if r.hasExt {
+		ext, _ = binary.Varint(r.data_[ind+int(r.byteWidth)*int(l):])
+	}
 	return FixedTypedVector{
 		Object: Object{
 			buf:       r.data_,
 			offset:    ind,
 			byteWidth: r.byteWidth,
+			ext:       ext,
 		},
 		type_: vtype,
 		len_:  l,
@@ -769,11 +810,38 @@ func (r Reference) Map() (Map, error) {
 	if err != nil {
 		return Map{}, err
 	}
-	return Map{Vector{Sized{Object{
-		buf:       r.data_,
-		offset:    ind,
-		byteWidth: r.byteWidth,
-	}}}}, nil
+	sz := Sized{
+		Object{
+			buf:       r.data_,
+			offset:    ind,
+			byteWidth: r.byteWidth,
+		},
+	}
+	if r.hasExt {
+		size, err := sz.Size()
+		if err != nil {
+			return EmptyMap(), nil
+		}
+
+		numPrefixedData := 3
+		keysOffset := ind - int(r.byteWidth)*numPrefixedData
+		off, err := r.data_.Indirect(keysOffset, r.byteWidth)
+		if err != nil {
+			return EmptyMap(), fmt.Errorf("broken data: no ext for map")
+		}
+		bw, err := r.data_.ReadUInt64(keysOffset+int(r.byteWidth), r.byteWidth)
+		if err != nil {
+			return EmptyMap(), fmt.Errorf("broken data: no ext for map")
+		}
+		if bw <= 0 || bw > 8 {
+			return EmptyMap(), ErrInvalidData
+		}
+		if off < 0 || len(r.data_) <= off {
+			return EmptyMap(), ErrOutOfRange
+		}
+		sz.ext, _ = binary.Varint(r.data_[off+int(bw)*size:])
+	}
+	return Map{Vector{sz}}, nil
 }
 
 func (r Reference) MutateInt(i int64) error {

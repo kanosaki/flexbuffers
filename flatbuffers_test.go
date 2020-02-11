@@ -38,3 +38,38 @@ func TestWidthI(t *testing.T) {
 	a.Equal(BitWidth64, WidthI(math.MinInt32-1))
 	a.Equal(BitWidth64, WidthI(math.MinInt64))
 }
+
+func TestUnpackType(t *testing.T) {
+	a := assert.New(t)
+	cases := []struct {
+		packedByte uint8
+		byteWidth  BitWidth
+		tp         Type
+		hasExt     bool
+	}{
+		{
+			packedByte: uint8(FBTString<<2 | 0x01 | 1<<7),
+			byteWidth:  BitWidth16,
+			tp:         FBTString,
+			hasExt:     true,
+		},
+		{
+			packedByte: uint8(FBTVectorFloat<<2 | 0x03 | 1<<7),
+			byteWidth:  BitWidth64,
+			tp:         FBTVectorFloat,
+			hasExt:     true,
+		},
+		{
+			packedByte: uint8(FBTVectorFloat<<2 | 0x03),
+			byteWidth:  BitWidth64,
+			tp:         FBTVectorFloat,
+			hasExt:     false,
+		},
+	}
+	for _, c := range cases {
+		bw, tp, hasExt := UnpackType(c.packedByte)
+		a.Equal(c.tp, tp)
+		a.Equal(c.byteWidth, bw)
+		a.Equal(c.hasExt, hasExt)
+	}
+}

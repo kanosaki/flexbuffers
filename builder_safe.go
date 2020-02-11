@@ -15,7 +15,7 @@ func (b *Builder) IndirectInt(i int64) {
 	iloc := uint64(len(b.buf))
 	binary.LittleEndian.PutUint64(tmp[:], uint64(i))
 	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectInt, bitWidth))
+	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectInt, bitWidth, false))
 }
 
 func (b *Builder) IndirectUInt(i uint64) {
@@ -25,7 +25,7 @@ func (b *Builder) IndirectUInt(i uint64) {
 	iloc := uint64(len(b.buf))
 	binary.LittleEndian.PutUint64(tmp[:], i)
 	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectUInt, bitWidth))
+	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectUInt, bitWidth, false))
 }
 
 func (b *Builder) IndirectFloat32(f float32) {
@@ -35,7 +35,7 @@ func (b *Builder) IndirectFloat32(f float32) {
 	iloc := uint64(len(b.buf))
 	binary.LittleEndian.PutUint64(tmp[:], uint64(math.Float32bits(f)))
 	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
+	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth, false))
 }
 
 func (b *Builder) IndirectFloat64(f float64) {
@@ -45,7 +45,7 @@ func (b *Builder) IndirectFloat64(f float64) {
 	iloc := uint64(len(b.buf))
 	binary.LittleEndian.PutUint64(tmp[:], math.Float64bits(f))
 	b.WriteBytes(tmp[:byteWidth])
-	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth))
+	b.stack = append(b.stack, newValueUInt(iloc, FBTIndirectFloat, bitWidth, false))
 }
 
 func (b *Builder) allocate(bw int) int {

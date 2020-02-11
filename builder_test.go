@@ -14,7 +14,7 @@ import (
 
 func TestBuildAndParse(t *testing.T) {
 	buildResultDir := "./testdata/builder_test"
-	verifyResult := func(name string, d []byte) {
+	verifyResult := func(t *testing.T, name string, d []byte) {
 		p := path.Join(buildResultDir, fmt.Sprintf("%s.flexbuf", name))
 		_, err := os.Stat(p)
 		if err == nil {
@@ -337,7 +337,7 @@ func TestBuildAndParse(t *testing.T) {
 			if err := b.Finish(); err != nil {
 				t.Error(err)
 			}
-			verifyResult(c.name, b.Buffer())
+			verifyResult(t, c.name, b.Buffer())
 			c.assertFn(a, b.Buffer().RootOrNull())
 		})
 	}

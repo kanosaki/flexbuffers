@@ -8,6 +8,7 @@ type value struct {
 	d           int64
 	typ         Type
 	minBitWidth BitWidth
+	hasExt      bool
 }
 
 func newValueBool(b bool) value {
@@ -19,7 +20,7 @@ func newValueBool(b bool) value {
 }
 
 func (v value) StoredPackedType(bw BitWidth) uint8 {
-	return PackedType(v.StoredWidth(bw), v.typ, false)
+	return PackedType(v.StoredWidth(bw), v.typ, v.hasExt)
 }
 
 func PaddingBytes(bufSize, scalarSize int) int {
@@ -74,8 +75,8 @@ func (v value) AsUInt() uint64 {
 	return uint64(v.d)
 }
 
-func newValueUInt(u uint64, t Type, bw BitWidth) value {
-	return value{d: int64(u), typ: t, minBitWidth: bw}
+func newValueUInt(u uint64, t Type, bw BitWidth, ext bool) value {
+	return value{d: int64(u), typ: t, minBitWidth: bw, hasExt: ext}
 }
 
 func newValueInt(u int64, t Type, bw BitWidth) value {

@@ -13,7 +13,7 @@ const (
 	MetaBit                     uint8 = 1 << 7
 )
 
-type BitWidth int
+type BitWidth uint8
 
 func (b BitWidth) ByteWidth() uint8 {
 	return 1 << b
@@ -48,7 +48,7 @@ func WidthB(byteWidth int) BitWidth {
 	}
 }
 
-type Type int
+type Type uint8
 
 const (
 	FBTNull  Type = iota
@@ -70,7 +70,7 @@ const (
 	FBTVectorString  Type = 15
 	FBTVectorInt2    Type = 16 // Typed tuple (no type table no size field).
 	FBTVectorUInt2   Type = 17
-	FBTFectorFloat2  Type = 18
+	FBTVectorFloat2  Type = 18
 	FBTVectorInt3    Type = 19 // Typed triple (no type table no size field).
 	FBTVectorUInt3   Type = 20
 	FBTVectorFloat3  Type = 21
@@ -126,14 +126,14 @@ func ToFixedTypedVectorElementType(t Type, len *uint8) Type {
 
 func PackedType(bitWidth BitWidth, typ Type, withMeta bool) uint8 {
 	if withMeta {
-		return MetaBit | uint8(bitWidth) | (uint8(typ) << 2)
+		return uint8(MetaBit) | uint8(bitWidth) | (uint8(typ) << 2)
 	} else {
 		return uint8(bitWidth) | (uint8(typ) << 2)
 	}
 }
 
 func UnpackType(packedType uint8) (BitWidth, Type, bool) {
-	return 1 << (packedType & 3), Type(packedType >> 2 &^ MetaBit), packedType&MetaBit == MetaBit
+	return BitWidth(packedType & 3), Type((packedType &^ MetaBit) >> 2), packedType&MetaBit == MetaBit
 }
 
 var NullPackedType = PackedType(BitWidth8, FBTNull, false)
@@ -174,6 +174,11 @@ type Object struct {
 	buf       Raw
 	offset    int
 	byteWidth uint8
+	ext       int64
+}
+
+func (o Object) Ext() int64 {
+	return o.ext
 }
 
 type Sized struct {

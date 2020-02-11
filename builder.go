@@ -2,6 +2,7 @@ package flexbuffers
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"reflect"
@@ -42,6 +43,8 @@ type Builder struct {
 	flags            BuilderFlag
 	forceMinBitWidth BitWidth
 	err              error
+	ext              int64
+	extMap           map[int]int64
 
 	keyOffsetMap        map[uint64]offsetAndLen
 	stringOffsetMap     map[uint64]offsetAndLen
@@ -77,6 +80,7 @@ func (b *Builder) Clear() {
 	b.stack = nil
 	b.finished = false
 	b.forceMinBitWidth = BitWidth8
+	b.extMap = make(map[int]int64)
 	if b.flags&BuilderFlagShareKeys == BuilderFlagShareKeys {
 		b.keyOffsetMap = make(map[uint64]offsetAndLen)
 	} else {
@@ -111,6 +115,10 @@ func (b *Builder) Finish() error {
 	return nil
 }
 
+func (b *Builder) Ext(i int64) {
+	b.ext = i
+}
+
 func (b *Builder) WriteBytes(data []byte) {
 	b.buf = append(b.buf, data...)
 }
@@ -125,7 +133,7 @@ func (b *Builder) Key(key []byte) uint64 {
 		prev, ok := b.keyOffsetMap[hash]
 		if ok && bytes.Compare(key, b.buf[prev.offset:int(prev.offset)+prev.size]) == 0 {
 			sloc = prev.offset
-			b.stack = append(b.stack, newValueUInt(prev.offset, FBTKey, BitWidth8))
+			b.stack = append(b.stack, newValueUInt(prev.offset, FBTKey, BitWidth8, false))
 			return prev.offset
 		}
 		// not found or found but different content (hash conflict)
@@ -133,7 +141,7 @@ func (b *Builder) Key(key []byte) uint64 {
 	}
 	b.WriteBytes(key)
 	b.buf = append(b.buf, 0) // terminate bytes
-	b.stack = append(b.stack, newValueUInt(sloc, FBTKey, BitWidth8))
+	b.stack = append(b.stack, newValueUInt(sloc, FBTKey, BitWidth8, false))
 	if share && !conflict {
 		b.keyOffsetMap[hash] = offsetAndLen{
 			offset: sloc,
@@ -141,6 +149,10 @@ func (b *Builder) Key(key []byte) uint64 {
 		}
 	}
 	return sloc
+}
+
+func (b *Builder) AttachMetadata(tag int, body []byte) {
+
 }
 
 func (b *Builder) Null() {
@@ -162,7 +174,7 @@ func (b *Builder) IntField(key []byte, i int64) {
 }
 
 func (b *Builder) UInt(i uint64) {
-	b.stack = append(b.stack, newValueUInt(i, FBTUint, WidthU(i)))
+	b.stack = append(b.stack, newValueUInt(i, FBTUint, WidthU(i), false))
 }
 
 func (b *Builder) UIntField(key []byte, i uint64) {
@@ -235,7 +247,7 @@ func (b *Builder) StringValue(s string) int {
 		prevLoc, ok := b.stringOffsetMap[hash]
 		if ok && bytes.Compare(data, b.buf[prevLoc.offset:int(prevLoc.offset)+prevLoc.size]) == 0 {
 			bitWidth := WidthU(uint64(len(data)))
-			b.stack = append(b.stack, newValueUInt(prevLoc.offset, FBTString, bitWidth))
+			b.stack = append(b.stack, newValueUInt(prevLoc.offset, FBTString, bitWidth, b.ext != 0))
 			return int(prevLoc.offset)
 		}
 		// not found or found but different content (hash conflict)
@@ -268,7 +280,11 @@ func (b *Builder) BlobField(key, data []byte) int {
 }
 
 func (b *Builder) StartVector() int {
-	return len(b.stack)
+	n := len(b.stack)
+	if b.ext != 0 {
+		b.extMap[n] = b.ext
+	}
+	return n
 }
 
 func (b *Builder) StartVectorField(key []byte) int {
@@ -277,7 +293,11 @@ func (b *Builder) StartVectorField(key []byte) int {
 }
 
 func (b *Builder) StartMap() int {
-	return len(b.stack)
+	n := len(b.stack)
+	if b.ext != 0 {
+		b.extMap[n] = b.ext
+	}
+	return n
 }
 
 func (b *Builder) MapField(key []byte, fn func(bld *Builder)) int {
@@ -312,7 +332,8 @@ func (b *Builder) StartMapField(key []byte) int {
 }
 
 func (b *Builder) EndVector(start int, typed, fixed bool) (uint64, error) {
-	vec, err := b.createVector(start, len(b.stack)-start, 1, typed, fixed, nil)
+	ext := b.extMap[start]
+	vec, err := b.createVector(start, len(b.stack)-start, 1, typed, fixed, nil, ext, ext != 0)
 	if err != nil {
 		return 0, err
 	}
@@ -378,11 +399,12 @@ func (b *Builder) EndMap(start int) (int, error) {
 	}
 	sort.Sort(&sortingSlice)
 
+	ext := b.extMap[start]
 	share := b.flags&BuilderFlagShareKeyVectors == BuilderFlagShareKeyVectors
 	var keys value
 	var err error
 	var hash uint64
-	if share {
+	if share && ext == 0 {
 		h := xxhash.New()
 		for key := start; key < len(b.stack); key += 2 {
 			_, _ = h.Write(readCStringBytes(b.buf, int(b.stack[key].d)))
@@ -393,7 +415,8 @@ func (b *Builder) EndMap(start int) (int, error) {
 			goto keyOk
 		}
 	}
-	keys, err = b.createVector(start, l, 2, true, false, nil)
+	// attach ext only after keys vector
+	keys, err = b.createVector(start, l, 2, true, false, nil, ext, false)
 	if err != nil {
 		return 0, err
 	}
@@ -401,7 +424,7 @@ func (b *Builder) EndMap(start int) (int, error) {
 		b.keyVectorsOffsetMap[hash] = keys
 	}
 keyOk:
-	vec, err := b.createVector(start+1, l, 2, false, false, &keys)
+	vec, err := b.createVector(start+1, l, 2, false, false, &keys, 0, ext != 0)
 	if err != nil {
 		return 0, err
 	}
@@ -428,7 +451,14 @@ func (b *Builder) createBlob(data []byte, trailing int, t Type) int {
 	for i := 0; i < trailing; i++ {
 		b.buf = append(b.buf, 0)
 	}
-	b.stack = append(b.stack, newValueUInt(uint64(sloc), t, bitWidth))
+	hasExt := b.ext != 0
+	if hasExt {
+		var buf [8]byte
+		l := binary.PutVarint(buf[:], b.ext)
+		b.buf = append(b.buf, buf[:l]...)
+		b.ext = 0
+	}
+	b.stack = append(b.stack, newValueUInt(uint64(sloc), t, bitWidth, hasExt))
 	return sloc
 }
 
@@ -446,7 +476,7 @@ func (b *Builder) WriteAny(v *value, byteWidth int) error {
 	return nil
 }
 
-func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys *value) (value, error) {
+func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys *value, ext int64, hasExtType bool) (value, error) {
 	bitWidth := BitWidthMax(b.forceMinBitWidth, WidthU(uint64(vecLen)))
 	prefixElems := 1
 	if keys != nil {
@@ -490,6 +520,12 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 			b.buf = append(b.buf, b.stack[i].StoredPackedType(bitWidth))
 		}
 	}
+	hasExt := ext != 0
+	if hasExt {
+		var buf [8]byte
+		l := binary.PutVarint(buf[:], ext)
+		b.buf = append(b.buf, buf[:l]...)
+	}
 	t := FBTVector
 	if keys != nil {
 		t = FBTMap
@@ -505,6 +541,7 @@ func (b *Builder) createVector(start, vecLen, step int, typed, fixed bool, keys 
 		d:           int64(vloc),
 		typ:         t,
 		minBitWidth: bitWidth,
+		hasExt:      hasExtType,
 	}, nil
 }
 
