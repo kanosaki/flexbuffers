@@ -31,7 +31,7 @@ func (w *BSONWriter) pushHeader(t bsontype.Type) error {
 	return nil
 }
 
-func (w *BSONWriter) PushString(s string) error {
+func (w *BSONWriter) PushString(ctx *Context, s string) error {
 	if err := w.pushHeader(bsontype.String); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (w *BSONWriter) PushString(s string) error {
 	return nil
 }
 
-func (w *BSONWriter) PushBlob(b []byte) error {
+func (w *BSONWriter) PushBlob(ctx *Context, b []byte) error {
 	if err := w.pushHeader(bsontype.Binary); err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (w *BSONWriter) PushBlob(b []byte) error {
 	return nil
 }
 
-func (w *BSONWriter) PushInt(i int64) error {
+func (w *BSONWriter) PushInt(ctx *Context, i int64) error {
 	if i < math.MinInt64 || math.MaxInt64 < i {
 		return fmt.Errorf("cannot write %d to BSON document: out of bound", i)
 	}
@@ -58,7 +58,7 @@ func (w *BSONWriter) PushInt(i int64) error {
 	return nil
 }
 
-func (w *BSONWriter) PushUint(u uint64) error {
+func (w *BSONWriter) PushUint(ctx *Context, u uint64) error {
 	if math.MaxInt64 < u {
 		return fmt.Errorf("cannot write %d to BSON document: out of bound", u)
 	}
@@ -69,7 +69,7 @@ func (w *BSONWriter) PushUint(u uint64) error {
 	return nil
 }
 
-func (w *BSONWriter) PushFloat(f float64) error {
+func (w *BSONWriter) PushFloat(ctx *Context, f float64) error {
 	if err := w.pushHeader(bsontype.Double); err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (w *BSONWriter) PushFloat(f float64) error {
 	return nil
 }
 
-func (w *BSONWriter) PushBool(b bool) error {
+func (w *BSONWriter) PushBool(ctx *Context, b bool) error {
 	if err := w.pushHeader(bsontype.Boolean); err != nil {
 		return err
 	}
@@ -85,14 +85,14 @@ func (w *BSONWriter) PushBool(b bool) error {
 	return nil
 }
 
-func (w *BSONWriter) PushNull() error {
+func (w *BSONWriter) PushNull(*Context) error {
 	if err := w.pushHeader(bsontype.Null); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (w *BSONWriter) BeginArray() (int, error) {
+func (w *BSONWriter) BeginArray(*Context) (int, error) {
 	if err := w.pushHeader(bsontype.Array); err != nil {
 		return 0, err
 	}
@@ -102,14 +102,14 @@ func (w *BSONWriter) BeginArray() (int, error) {
 	return int(ptr), nil
 }
 
-func (w *BSONWriter) EndArray(ptr int) error {
+func (w *BSONWriter) EndArray(ctx *Context, id int) error {
 	w.elemIndex = w.elemIndex[:len(w.elemIndex)-1]
 	var err error
-	w.dst, err = bsoncore.AppendDocumentEnd(w.dst, int32(ptr))
+	w.dst, err = bsoncore.AppendDocumentEnd(w.dst, int32(id))
 	return err
 }
 
-func (w *BSONWriter) BeginObject() (int, error) {
+func (w *BSONWriter) BeginObject(*Context) (int, error) {
 	if err := w.pushHeader(bsontype.EmbeddedDocument); err != nil {
 		return 0, err
 	}
@@ -119,15 +119,15 @@ func (w *BSONWriter) BeginObject() (int, error) {
 	return int(ptr), nil
 }
 
-func (w *BSONWriter) EndObject(ptr int) error {
+func (w *BSONWriter) EndObject(ctx *Context, id int) error {
 	w.key = ""
 	w.elemIndex = w.elemIndex[:len(w.elemIndex)-1]
 	var err error
-	w.dst, err = bsoncore.AppendDocumentEnd(w.dst, int32(ptr))
+	w.dst, err = bsoncore.AppendDocumentEnd(w.dst, int32(id))
 	return err
 }
 
-func (w *BSONWriter) PushObjectKey(k string) error {
+func (w *BSONWriter) PushObjectKey(ctx *Context, k string) error {
 	w.key = k
 	return nil
 }

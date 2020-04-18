@@ -45,7 +45,7 @@ func valueEncoder(v reflect.Value) encoderFunc {
 }
 
 func invalidValueEncoder(r *ObjectReader, v reflect.Value) error {
-	return r.Output.PushNull()
+	return r.Output.PushNull(nil)
 }
 
 var (
@@ -141,11 +141,11 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 
 func marshalerEncoder(r *ObjectReader, v reflect.Value) error {
 	if v.Kind() == reflect.Ptr && v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	m, ok := v.Interface().(SelfMarshaller)
 	if !ok {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	return m.Output(r.Output)
 }
@@ -153,22 +153,22 @@ func marshalerEncoder(r *ObjectReader, v reflect.Value) error {
 func addrMarshalerEncoder(r *ObjectReader, v reflect.Value) error {
 	va := v.Addr()
 	if va.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	m, ok := va.Interface().(SelfMarshaller)
 	if !ok {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	return m.Output(r.Output)
 }
 
 func stringEncoder(r *ObjectReader, v reflect.Value) error {
-	return r.Output.PushString(v.String())
+	return r.Output.PushString(nil, v.String())
 }
 
 func interfaceEncoder(r *ObjectReader, v reflect.Value) error {
 	if v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	return r.reflectValue(v.Elem())
 }
@@ -218,7 +218,7 @@ type mapEncoder struct {
 
 func (me mapEncoder) encode(r *ObjectReader, v reflect.Value) error {
 	if v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 
 	// Extract and sort the keys.
@@ -231,12 +231,12 @@ func (me mapEncoder) encode(r *ObjectReader, v reflect.Value) error {
 		}
 	}
 
-	ptr, err := r.Output.BeginObject()
+	ptr, err := r.Output.BeginObject(nil)
 	if err != nil {
 		return err
 	}
 	for _, kv := range sv {
-		if err := r.Output.PushObjectKey(kv.s); err != nil {
+		if err := r.Output.PushObjectKey(nil, kv.s); err != nil {
 			return err
 		}
 
@@ -244,7 +244,7 @@ func (me mapEncoder) encode(r *ObjectReader, v reflect.Value) error {
 			return err
 		}
 	}
-	return r.Output.EndObject(ptr)
+	return r.Output.EndObject(nil, ptr)
 }
 
 func newMapEncoder(t reflect.Type) encoderFunc {
@@ -263,10 +263,10 @@ func newMapEncoder(t reflect.Type) encoderFunc {
 
 func encodeByteSlice(r *ObjectReader, v reflect.Value) error {
 	if v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	s := v.Bytes()
-	return r.Output.PushBlob(s)
+	return r.Output.PushBlob(nil, s)
 }
 
 // sliceEncoder just wraps an arrayEncoder, checking to make sure the value isn't nil.
@@ -276,7 +276,7 @@ type sliceEncoder struct {
 
 func (se sliceEncoder) encode(r *ObjectReader, v reflect.Value) error {
 	if v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	return se.arrayEnc(r, v)
 }
@@ -298,7 +298,7 @@ type arrayEncoder struct {
 }
 
 func (ae arrayEncoder) encode(r *ObjectReader, v reflect.Value) error {
-	ptr, err := r.Output.BeginArray()
+	ptr, err := r.Output.BeginArray(nil)
 	if err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func (ae arrayEncoder) encode(r *ObjectReader, v reflect.Value) error {
 			return err
 		}
 	}
-	return r.Output.EndArray(ptr)
+	return r.Output.EndArray(nil, ptr)
 }
 
 func newArrayEncoder(t reflect.Type) encoderFunc {
@@ -322,7 +322,7 @@ type ptrEncoder struct {
 
 func (pe ptrEncoder) encode(r *ObjectReader, v reflect.Value) error {
 	if v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	return pe.elemEnc(r, v.Elem())
 }
@@ -352,11 +352,11 @@ func newCondAddrEncoder(canAddrEnc, elseEnc encoderFunc) encoderFunc {
 }
 
 func boolEncoder(r *ObjectReader, v reflect.Value) error {
-	return r.Output.PushBool(v.Bool())
+	return r.Output.PushBool(nil, v.Bool())
 }
 
 func intEncoder(r *ObjectReader, v reflect.Value) error {
-	return r.Output.PushInt(v.Int())
+	return r.Output.PushInt(nil, v.Int())
 }
 
 func uintEncoder(r *ObjectReader, v reflect.Value) error {
@@ -364,13 +364,13 @@ func uintEncoder(r *ObjectReader, v reflect.Value) error {
 	if u > math.MaxInt64 {
 		return fmt.Errorf("cannot encode %d: out of boundary", u)
 	}
-	return r.Output.PushInt(int64(u))
+	return r.Output.PushInt(nil, int64(u))
 }
 
 type floatEncoder int // number of bits
 
 func (bits floatEncoder) encode(r *ObjectReader, v reflect.Value) error {
-	return r.Output.PushFloat(v.Float())
+	return r.Output.PushFloat(nil, v.Float())
 }
 
 var (
@@ -380,7 +380,7 @@ var (
 
 func textMarshalerEncoder(r *ObjectReader, v reflect.Value) error {
 	if v.Kind() == reflect.Ptr && v.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	m := v.Interface().(encoding.TextMarshaler)
 	b, err := m.MarshalText()
@@ -388,18 +388,18 @@ func textMarshalerEncoder(r *ObjectReader, v reflect.Value) error {
 		return err
 	}
 	// TODO: or key?
-	return r.Output.PushString(unsafeutil.B2S(b))
+	return r.Output.PushString(nil, unsafeutil.B2S(b))
 }
 
 func addrTextMarshalerEncoder(r *ObjectReader, v reflect.Value) error {
 	va := v.Addr()
 	if va.IsNil() {
-		return r.Output.PushNull()
+		return r.Output.PushNull(nil)
 	}
 	m := va.Interface().(encoding.TextMarshaler)
 	b, err := m.MarshalText()
 	if err != nil {
 		return err
 	}
-	return r.Output.PushString(unsafeutil.B2S(b))
+	return r.Output.PushString(nil, unsafeutil.B2S(b))
 }

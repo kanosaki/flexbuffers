@@ -9,75 +9,75 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-type pushRecord struct {
+type PushRecord struct {
 	Action string
 	Params []interface{}
 }
 
-type mockWriter struct {
-	history  []pushRecord
-	arrayCtr int
-	mapCtr   int
+type MockWriter struct {
+	History  []PushRecord
+	ArrayCtr int
+	MapCtr   int
 }
 
-func (m *mockWriter) push(params ...interface{}) error {
+func (m *MockWriter) Push(params ...interface{}) error {
 	clr := stack.Caller(1)
 	callerFunc := strings.Split(clr.Frame().Function, ".")
-	m.history = append(m.history, pushRecord{
+	m.History = append(m.History, PushRecord{
 		Action: callerFunc[len(callerFunc)-1],
 		Params: params,
 	})
 	return nil
 }
 
-func (m *mockWriter) PushString(s string) error {
-	return m.push(s)
+func (m *MockWriter) PushString(ctx *Context, s string) error {
+	return m.Push(s)
 }
 
-func (m *mockWriter) PushBlob(b []byte) error {
-	return m.push(b)
+func (m *MockWriter) PushBlob(ctx *Context, b []byte) error {
+	return m.Push(b)
 }
 
-func (m *mockWriter) PushInt(i int64) error {
-	return m.push(i)
+func (m *MockWriter) PushInt(ctx *Context, i int64) error {
+	return m.Push(i)
 }
 
-func (m *mockWriter) PushUint(u uint64) error {
-	return m.push(u)
+func (m *MockWriter) PushUint(ctx *Context, u uint64) error {
+	return m.Push(u)
 }
 
-func (m *mockWriter) PushFloat(f float64) error {
-	return m.push(f)
+func (m *MockWriter) PushFloat(ctx *Context, f float64) error {
+	return m.Push(f)
 }
 
-func (m *mockWriter) PushBool(b bool) error {
-	return m.push(b)
+func (m *MockWriter) PushBool(ctx *Context, b bool) error {
+	return m.Push(b)
 }
 
-func (m *mockWriter) PushNull() error {
-	return m.push()
+func (m *MockWriter) PushNull(*Context) error {
+	return m.Push()
 }
 
-func (m *mockWriter) BeginArray() (int, error) {
-	m.arrayCtr++
-	return m.arrayCtr, m.push(m.arrayCtr)
+func (m *MockWriter) BeginArray(*Context) (int, error) {
+	m.ArrayCtr++
+	return m.ArrayCtr, m.Push(m.ArrayCtr)
 }
 
-func (m *mockWriter) EndArray(i int) error {
-	return m.push(i)
+func (m *MockWriter) EndArray(ctx *Context, id int) error {
+	return m.Push(id)
 }
 
-func (m *mockWriter) BeginObject() (int, error) {
-	m.mapCtr++
-	return m.mapCtr, m.push(m.mapCtr)
+func (m *MockWriter) BeginObject(*Context) (int, error) {
+	m.MapCtr++
+	return m.MapCtr, m.Push(m.MapCtr)
 }
 
-func (m *mockWriter) EndObject(i int) error {
-	return m.push(i)
+func (m *MockWriter) EndObject(ctx *Context, id int) error {
+	return m.Push(id)
 }
 
-func (m *mockWriter) PushObjectKey(k string) error {
-	return m.push(k)
+func (m *MockWriter) PushObjectKey(ctx *Context, k string) error {
+	return m.Push(k)
 }
 
 func TestReadObject(t *testing.T) {
@@ -95,12 +95,12 @@ func TestReadObject(t *testing.T) {
 		D: map[string]int{"x": 100},
 		E: math.Pi,
 	}
-	mw := &mockWriter{}
+	mw := &MockWriter{}
 	r := &ObjectReader{Output: mw}
 	if err := r.Read(src); err != nil {
 		t.Fatal(err)
 	}
-	expected := []pushRecord{
+	expected := []PushRecord{
 		{Action: "BeginObject", Params: []interface{}{1}},
 		{Action: "PushObjectKey", Params: []interface{}{"A"}},
 		{Action: "PushInt", Params: []interface{}{int64(1)}},
@@ -121,7 +121,7 @@ func TestReadObject(t *testing.T) {
 		{Action: "PushFloat", Params: []interface{}{math.Pi}},
 		{Action: "EndObject", Params: []interface{}{1}},
 	}
-	if diff := cmp.Diff(expected, mw.history); diff != "" {
+	if diff := cmp.Diff(expected, mw.History); diff != "" {
 		t.Error(diff)
 	}
 }
@@ -150,12 +150,12 @@ func TestReadObjectNested(t *testing.T) {
 			{X: "b"},
 		},
 	}
-	mw := &mockWriter{}
+	mw := &MockWriter{}
 	r := &ObjectReader{Output: mw}
 	if err := r.Read(src); err != nil {
 		t.Fatal(err)
 	}
-	expected := []pushRecord{
+	expected := []PushRecord{
 		{Action: "BeginObject", Params: []interface{}{1}},
 
 		{Action: "PushObjectKey", Params: []interface{}{"A"}},
@@ -193,7 +193,7 @@ func TestReadObjectNested(t *testing.T) {
 
 		{Action: "EndObject", Params: []interface{}{1}},
 	}
-	if diff := cmp.Diff(expected, mw.history); diff != "" {
+	if diff := cmp.Diff(expected, mw.History); diff != "" {
 		t.Error(diff)
 	}
 }

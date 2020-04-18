@@ -1,23 +1,36 @@
 package process
 
-type DocumentReader interface {
-	SetOutput(w DocumentWriter) error
-	ReadBuffer(b []byte) error
-	// TODO: add function that accepts io.Reader as Input
+type Context struct {
+	LastId int
 }
+
+func (c *Context) NextID() int {
+	c.LastId++
+	return c.LastId
+}
+
+type Document interface {
+	FlushTo(ctx *Context, w DocumentWriter) error
+}
+
 type DocumentWriter interface {
-	PushString(s string) error
-	PushBlob(b []byte) error
-	PushInt(i int64) error
-	PushUint(u uint64) error
-	PushFloat(f float64) error
-	PushBool(b bool) error
-	PushNull() error
+	PushString(ctx *Context, s string) error
+	PushBlob(ctx *Context, b []byte) error
+	PushInt(ctx *Context, i int64) error
+	PushUint(ctx *Context, u uint64) error
+	PushFloat(ctx *Context, f float64) error
+	PushBool(ctx *Context, b bool) error
+	PushNull(ctx *Context) error
 
-	BeginArray() (int, error)
-	EndArray(int) error
+	BeginArray(ctx *Context) (int, error)
+	EndArray(ctx *Context, id int) error
 
-	BeginObject() (int, error)
-	EndObject(int) error
-	PushObjectKey(k string) error
+	BeginObject(ctx *Context) (int, error)
+	EndObject(ctx *Context, id int) error
+	PushObjectKey(ctx *Context, k string) error
+}
+
+type DocumentProcessor interface {
+	DocumentWriter
+	Reset(ctx *Context, w DocumentWriter)
 }

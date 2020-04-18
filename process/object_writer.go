@@ -36,80 +36,80 @@ func NewObjectWriter(target interface{}) (*ObjectWriter, error) {
 	}, nil
 }
 
-func (o *ObjectWriter) PushString(s string) error {
+func (o *ObjectWriter) PushString(ctx *Context, s string) error {
 	var setter valueSetter
 	um, err := o.prepareTarget(&setter, false)
 	if err != nil {
 		return err
 	}
 	if um != nil {
-		return um.PushString(s)
+		return um.PushString(ctx, s)
 	}
 	return setter.SetString(s)
 }
 
-func (o *ObjectWriter) PushBlob(b []byte) error {
+func (o *ObjectWriter) PushBlob(ctx *Context, b []byte) error {
 	panic("implement me")
 }
 
-func (o *ObjectWriter) PushInt(i int64) error {
+func (o *ObjectWriter) PushInt(ctx *Context, i int64) error {
 	var setter valueSetter
 	um, err := o.prepareTarget(&setter, false)
 	if err != nil {
 		return err
 	}
 	if um != nil {
-		return um.PushInt(i)
+		return um.PushInt(ctx, i)
 	}
 	return setter.SetInt(i)
 }
 
-func (o *ObjectWriter) PushUint(u uint64) error {
+func (o *ObjectWriter) PushUint(ctx *Context, u uint64) error {
 	panic("implement me")
 }
 
-func (o *ObjectWriter) PushFloat(f float64) error {
+func (o *ObjectWriter) PushFloat(ctx *Context, f float64) error {
 	panic("implement me")
 }
 
-func (o *ObjectWriter) PushBool(b bool) error {
+func (o *ObjectWriter) PushBool(ctx *Context, b bool) error {
 	panic("implement me")
 }
 
-func (o *ObjectWriter) PushNull() error {
+func (o *ObjectWriter) PushNull(*Context) error {
 	panic("implement me")
 }
 
 var textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 
-func (o *ObjectWriter) BeginArray() (int, error) {
+func (o *ObjectWriter) BeginArray(*Context) (int, error) {
 	var setter valueSetter
 	um, err := o.prepareTarget(&setter, false)
 	if err != nil {
 		return 0, err
 	}
 	if um != nil {
-		return um.BeginArray()
+		return um.BeginArray(nil)
 	}
 	o.stack = append(o.stack, setter)
 	o.selectedKey = nil
 	return 0, setter.BeginArray()
 }
 
-func (o *ObjectWriter) EndArray(int) error {
+func (o *ObjectWriter) EndArray(*Context, int) error {
 	popd := o.stack[len(o.stack)-1]
 	o.stack = o.stack[:len(o.stack)-1]
 	return popd.EndArray()
 }
 
-func (o *ObjectWriter) BeginObject() (int, error) {
+func (o *ObjectWriter) BeginObject(*Context) (int, error) {
 	var setter valueSetter
 	um, err := o.prepareTarget(&setter, false)
 	if err != nil {
 		return 0, err
 	}
 	if um != nil {
-		return um.BeginObject()
+		return um.BeginObject(nil)
 	}
 	if err := setter.BeginObject(); err != nil {
 		return 0, err
@@ -119,7 +119,7 @@ func (o *ObjectWriter) BeginObject() (int, error) {
 	return len(o.stack), nil
 }
 
-func (o *ObjectWriter) EndObject(int) error {
+func (o *ObjectWriter) EndObject(*Context, int) error {
 	o.selectedKey = nil
 	popd := o.stack[len(o.stack)-1]
 	o.stack = o.stack[:len(o.stack)-1]
@@ -233,8 +233,8 @@ func (o *ObjectWriter) prepareTarget(setter *valueSetter, decodingNil bool) (Unm
 	return nil, nil
 }
 
-func (o *ObjectWriter) PushObjectKey(key string) error {
-	o.selectedKey = &key
+func (o *ObjectWriter) PushObjectKey(ctx *Context, k string) error {
+	o.selectedKey = &k
 	return nil
 
 }
@@ -349,7 +349,7 @@ func (vs *valueSetter) SetInt(i int64) error {
 	var unmarshaller Unmarshaler
 	unmarshaller, v = indirect(v, false)
 	if unmarshaller != nil {
-		return unmarshaller.PushInt(i)
+		return unmarshaller.PushInt(nil, i)
 	}
 
 	switch v.Kind() {

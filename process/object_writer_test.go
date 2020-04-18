@@ -28,7 +28,7 @@ func TestObjectWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	records := []pushRecord{
+	records := []PushRecord{
 		{Action: "BeginObject", Params: []interface{}{}},
 
 		{Action: "PushObjectKey", Params: []interface{}{"A"}},

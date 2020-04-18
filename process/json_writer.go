@@ -14,7 +14,7 @@ type JsonWriter struct {
 	keyWritten bool
 }
 
-func (j *JsonWriter) PushString(s string) (err error) {
+func (j *JsonWriter) PushString(ctx *Context, s string) (err error) {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -28,7 +28,7 @@ func (j *JsonWriter) PushString(s string) (err error) {
 	return
 }
 
-func (j *JsonWriter) PushBlob(b []byte) (err error) {
+func (j *JsonWriter) PushBlob(ctx *Context, b []byte) (err error) {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (j *JsonWriter) PushBlob(b []byte) (err error) {
 	return
 }
 
-func (j *JsonWriter) PushInt(i int64) error {
+func (j *JsonWriter) PushInt(ctx *Context, i int64) error {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (j *JsonWriter) PushInt(i int64) error {
 	return err
 }
 
-func (j *JsonWriter) PushUint(u uint64) error {
+func (j *JsonWriter) PushUint(ctx *Context, u uint64) error {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (j *JsonWriter) PushUint(u uint64) error {
 	return err
 }
 
-func (j *JsonWriter) PushFloat(f float64) error {
+func (j *JsonWriter) PushFloat(ctx *Context, f float64) error {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (j *JsonWriter) PushFloat(f float64) error {
 	return err
 }
 
-func (j *JsonWriter) PushBool(b bool) (err error) {
+func (j *JsonWriter) PushBool(ctx *Context, b bool) (err error) {
 	if err := j.preElem(); err != nil {
 		return err
 	}
@@ -80,13 +80,13 @@ func (j *JsonWriter) PushBool(b bool) (err error) {
 	return
 }
 
-func (j *JsonWriter) PushNull() error {
+func (j *JsonWriter) PushNull(*Context) error {
 	_, err := fmt.Fprintf(j.Output, "null")
 	j.incrementElemIndex()
 	return err
 }
 
-func (j *JsonWriter) BeginArray() (int, error) {
+func (j *JsonWriter) BeginArray(*Context) (int, error) {
 	if err := j.preElem(); err != nil {
 		return 0, err
 	}
@@ -96,14 +96,14 @@ func (j *JsonWriter) BeginArray() (int, error) {
 	return 0, err
 }
 
-func (j *JsonWriter) EndArray(int) error {
+func (j *JsonWriter) EndArray(*Context, int) error {
 	j.elemIndex = j.elemIndex[:len(j.elemIndex)-1]
 	_, err := fmt.Fprintf(j.Output, "]")
 	j.incrementElemIndex()
 	return err
 }
 
-func (j *JsonWriter) BeginObject() (int, error) {
+func (j *JsonWriter) BeginObject(*Context) (int, error) {
 	if err := j.preElem(); err != nil {
 		return 0, err
 	}
@@ -113,7 +113,7 @@ func (j *JsonWriter) BeginObject() (int, error) {
 	return 0, err
 }
 
-func (j *JsonWriter) EndObject(int) error {
+func (j *JsonWriter) EndObject(*Context, int) error {
 	j.elemIndex = j.elemIndex[:len(j.elemIndex)-1]
 	_, err := fmt.Fprintf(j.Output, "}")
 	j.incrementElemIndex()
@@ -134,7 +134,7 @@ func (j *JsonWriter) incrementElemIndex() {
 	j.keyWritten = false
 }
 
-func (j *JsonWriter) PushObjectKey(k string) (err error) {
+func (j *JsonWriter) PushObjectKey(ctx *Context, k string) (err error) {
 	if err := j.preElem(); err != nil {
 		return err
 	}

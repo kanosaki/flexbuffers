@@ -10,11 +10,15 @@ import (
 )
 
 type BSONReader struct {
-	Output DocumentWriter
+	Data bson.Raw
 }
 
-func (b *BSONReader) readDocument(d bson.Raw) error {
-	ptr, err := b.Output.BeginObject()
+func (b *BSONReader) FlushTo(ctx *Context, w DocumentWriter) error {
+	return b.readDocument(ctx, w, b.Data)
+}
+
+func (b *BSONReader) readDocument(ctx *Context, output DocumentWriter, d bson.Raw) error {
+	ptr, err := output.BeginObject(ctx)
 	if err != nil {
 		return err
 	}
@@ -27,22 +31,22 @@ func (b *BSONReader) readDocument(d bson.Raw) error {
 		if err != nil {
 			return err
 		}
-		if err := b.Output.PushObjectKey(key); err != nil {
+		if err := output.PushObjectKey(ctx, key); err != nil {
 			return err
 		}
 		v, err := elem.ValueErr()
 		if err != nil {
 			return err
 		}
-		if err := b.readRawValue(v); err != nil {
+		if err := b.readRawValue(ctx, output, v); err != nil {
 			return err
 		}
 	}
-	return b.Output.EndObject(ptr)
+	return output.EndObject(ctx, ptr)
 }
 
-func (b *BSONReader) readArray(d bson.Raw) error {
-	ptr, err := b.Output.BeginArray()
+func (b *BSONReader) readArray(ctx *Context, output DocumentWriter, d bson.Raw) error {
+	ptr, err := output.BeginArray(ctx)
 	if err != nil {
 		return err
 	}
@@ -51,65 +55,65 @@ func (b *BSONReader) readArray(d bson.Raw) error {
 		return err
 	}
 	for _, elem := range elems {
-		if err := b.readRawValue(elem); err != nil {
+		if err := b.readRawValue(ctx, output, elem); err != nil {
 			return err
 		}
 	}
-	return b.Output.EndArray(ptr)
+	return output.EndArray(ctx, ptr)
 }
 
-func (b *BSONReader) readRawValue(rv bson.RawValue) error {
+func (b *BSONReader) readRawValue(ctx *Context, output DocumentWriter, rv bson.RawValue) error {
 	switch rv.Type {
 	case bsontype.Double:
 		d, ok := rv.DoubleOK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushFloat(d)
+		return output.PushFloat(ctx, d)
 	case bsontype.String:
 		v, ok := rv.StringValueOK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushString(v)
+		return output.PushString(ctx, v)
 	case bsontype.EmbeddedDocument:
 		doc, ok := rv.DocumentOK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.readDocument(doc)
+		return b.readDocument(ctx, output, doc)
 	case bsontype.Array:
 		v, ok := rv.ArrayOK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.readArray(v)
+		return b.readArray(ctx, output, v)
 	case bsontype.Binary:
 		_, v, ok := rv.BinaryOK() // TODO: handle subtype
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushBlob(v)
+		return output.PushBlob(ctx, v)
 	case bsontype.Boolean:
 		v, ok := rv.BooleanOK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushBool(v)
+		return output.PushBool(ctx, v)
 	case bsontype.Null:
-		return b.Output.PushNull()
+		return output.PushNull(ctx)
 	case bsontype.Int32:
 		v, ok := rv.Int32OK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushInt(int64(v))
+		return output.PushInt(ctx, int64(v))
 	case bsontype.Int64:
 		v, ok := rv.Int64OK()
 		if !ok {
 			return flexbuffers.ErrInvalidData
 		}
-		return b.Output.PushInt(v)
+		return output.PushInt(ctx, v)
 	case bsontype.DateTime:
 		return fmt.Errorf("unsupported")
 	case bsontype.Undefined:

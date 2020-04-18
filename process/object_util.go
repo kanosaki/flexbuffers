@@ -74,7 +74,7 @@ type structFields struct {
 }
 
 func (se structEncoder) encode(r *ObjectReader, v reflect.Value) error {
-	ptr, err := r.Output.BeginObject()
+	ptr, err := r.Output.BeginObject(nil)
 	if err != nil {
 		return err
 	}
@@ -97,14 +97,14 @@ FieldLoop:
 		if f.omitEmpty && isEmptyValue(fv) {
 			continue
 		}
-		if err := r.Output.PushObjectKey(f.name); err != nil {
+		if err := r.Output.PushObjectKey(nil, f.name); err != nil {
 			return err
 		}
 		if err := f.encoder(r, fv); err != nil {
 			return err
 		}
 	}
-	return r.Output.EndObject(ptr)
+	return r.Output.EndObject(nil, ptr)
 }
 
 // tagOptions is the string following a comma in a struct field's "json"

@@ -57,7 +57,7 @@ func (r *JsonReader) parseValue(s string) (string, error) {
 	}
 
 	if s[0] == '{' {
-		ptr, err := r.Output.BeginObject()
+		ptr, err := r.Output.BeginObject(nil)
 		if err != nil {
 			return s, err
 		}
@@ -65,10 +65,10 @@ func (r *JsonReader) parseValue(s string) (string, error) {
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse object: %s", err)
 		}
-		return tail, r.Output.EndObject(ptr)
+		return tail, r.Output.EndObject(nil, ptr)
 	}
 	if s[0] == '[' {
-		ptr, err := r.Output.BeginArray()
+		ptr, err := r.Output.BeginArray(nil)
 		if err != nil {
 			return s, err
 		}
@@ -76,32 +76,32 @@ func (r *JsonReader) parseValue(s string) (string, error) {
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse array: %s", err)
 		}
-		return tail, r.Output.EndArray(ptr)
+		return tail, r.Output.EndArray(nil, ptr)
 	}
 	if s[0] == '"' {
 		ss, tail, err := parseRawString(s[1:])
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse string: %s", err)
 		}
-		return tail, r.Output.PushString(unescapeStringBestEffort(ss))
+		return tail, r.Output.PushString(nil, unescapeStringBestEffort(ss))
 	}
 	if s[0] == 't' {
 		if len(s) < len("true") || s[:len("true")] != "true" {
 			return s, fmt.Errorf("unexpected value found: %q", s)
 		}
-		return s[len("true"):], r.Output.PushBool(true)
+		return s[len("true"):], r.Output.PushBool(nil, true)
 	}
 	if s[0] == 'f' {
 		if len(s) < len("false") || s[:len("false")] != "false" {
 			return s, fmt.Errorf("unexpected value found: %q", s)
 		}
-		return s[len("false"):], r.Output.PushBool(false)
+		return s[len("false"):], r.Output.PushBool(nil, false)
 	}
 	if s[0] == 'n' {
 		if len(s) < len("null") || s[:len("null")] != "null" {
 			return s, fmt.Errorf("unexpected value found: %q", s)
 		}
-		return s[len("null"):], r.Output.PushNull()
+		return s[len("null"):], r.Output.PushNull(nil)
 	}
 
 	integral, ns, tail, err := parseRawNumber(s)
@@ -109,9 +109,9 @@ func (r *JsonReader) parseValue(s string) (string, error) {
 		return tail, fmt.Errorf("cannot parse number: %s", err)
 	}
 	if integral {
-		return tail, r.Output.PushInt(fastfloat.ParseInt64BestEffort(ns))
+		return tail, r.Output.PushInt(nil, fastfloat.ParseInt64BestEffort(ns))
 	} else {
-		return tail, r.Output.PushFloat(fastfloat.ParseBestEffort(ns))
+		return tail, r.Output.PushFloat(nil, fastfloat.ParseBestEffort(ns))
 	}
 }
 
@@ -173,7 +173,7 @@ func (r *JsonReader) parseObject(s string) (string, error) {
 		if err != nil {
 			return s, fmt.Errorf("cannot parse object key: %s", err)
 		}
-		if err := r.Output.PushObjectKey(k); err != nil {
+		if err := r.Output.PushObjectKey(nil, k); err != nil {
 			return s, err
 		}
 		s = skipWS(s)

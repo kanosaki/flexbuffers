@@ -1,4 +1,4 @@
-package update
+package manipulation
 
 import "flexbuffers/process"
 
